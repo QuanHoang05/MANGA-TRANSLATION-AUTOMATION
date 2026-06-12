@@ -105,10 +105,13 @@ def run_job_in_background(
         jobs[job_id]["logs"].append(error_msg)
         jobs[job_id]["status"] = "failed"
     finally:
-        # Xóa tệp ZIP đã tải lên để giải phóng dung lượng bộ nhớ đệm trên máy chủ
+        # Xóa tệp ZIP hoặc thư mục chứa ảnh thô tạm thời để giải phóng bộ nhớ máy chủ
         if os.path.exists(zip_path):
             try:
-                os.remove(zip_path)
+                if os.path.isdir(zip_path):
+                    shutil.rmtree(zip_path)
+                else:
+                    os.remove(zip_path)
             except Exception:
                 pass
 
@@ -122,9 +125,9 @@ async def get_index(request: Request):
 
 
 @app.post("/api/upload")
-async def upload_zip(
+async def upload_files(
     background_tasks: BackgroundTasks,
-    file: UploadFile = File(...),
+    files: list[UploadFile] = File(...),
     api_key: str = Form(...),
     src_lang: str = Form("en"),
     tone: str = Form("tự nhiên"),
@@ -132,27 +135,62 @@ async def upload_zip(
     additional_instructions: str = Form("")
 ):
     """
-    Tiếp nhận tệp ZIP truyện tranh tải lên từ Client, khởi tạo tiến trình xử lý ngầm và trả về ID phiên làm việc.
+    Tiếp nhận các tệp tin tải lên (chấp nhận 1 file ZIP hoặc nhiều file ảnh đơn lẻ),
+    khởi tạo tiến trình xử lý ngầm và trả về ID phiên làm việc.
     """
-    if not file.filename.endswith('.zip'):
-        raise HTTPException(status_code=400, detail="Chỉ chấp nhận tệp tin định dạng .zip")
+    if not files or len(files) == 0:
+        raise HTTPException(status_code=400, detail="Không nhận được tệp tin nào.")
         
     job_id = str(uuid.uuid4())
-    zip_filename = f"{job_id}.zip"
-    zip_path = os.path.join(UPLOAD_DIR, zip_filename)
     
-    # Lưu tệp tin tải lên vào bộ nhớ đệm tạm thời trên máy chủ
-    try:
-        with open(zip_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Không thể lưu tệp tải lên: {str(e)}")
+    # Kiểm tra xem tệp tải lên có phải là một file ZIP duy nhất hay không
+    is_zip = len(files) == 1 and files[0].filename.lower().endswith('.zip')
+    
+    # Xác định đường dẫn đầu vào truyền cho Pipeline
+    pipeline_input_path = ""
+    
+    if is_zip:
+        # Nếu là ZIP, lưu tệp ZIP trực tiếp
+        zip_filename = f"{job_id}.zip"
+        zip_path = os.path.join(UPLOAD_DIR, zip_filename)
+        try:
+            with open(zip_path, "wb") as buffer:
+                shutil.copyfileobj(files[0].file, buffer)
+            pipeline_input_path = zip_path
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Không thể lưu tệp ZIP tải lên: {str(e)}")
+    else:
+        # Nếu là danh sách ảnh đơn lẻ, lưu tất cả vào một thư mục riêng biệt
+        job_upload_dir = os.path.join(UPLOAD_DIR, job_id)
+        os.makedirs(job_upload_dir, exist_ok=True)
+        
+        image_extensions = ('.png', '.jpg', '.jpeg', '.webp', '.bmp')
+        saved_count = 0
+        
+        for uploaded_file in files:
+            ext = os.path.splitext(uploaded_file.filename)[1].lower()
+            if ext not in image_extensions:
+                continue
+                
+            # Lưu ảnh giữ nguyên tên gốc tạm thời
+            file_path = os.path.join(job_upload_dir, uploaded_file.filename)
+            try:
+                with open(file_path, "wb") as buffer:
+                    shutil.copyfileobj(uploaded_file.file, buffer)
+                saved_count += 1
+            except Exception:
+                continue
+                
+        if saved_count == 0:
+            raise HTTPException(status_code=400, detail="Không tìm thấy tệp ảnh hợp lệ nào (.png, .jpg, .jpeg, .webp, .bmp)")
+            
+        pipeline_input_path = job_upload_dir
         
     # Khởi tạo thông tin phiên làm việc trong danh sách quản lý trạng thái
     jobs[job_id] = {
         "status": "processing",
         "progress": 0.0,
-        "logs": ["HỆ THỐNG: Đã nhận tệp ZIP. Bắt đầu khởi chạy tiến trình dịch ngầm..."],
+        "logs": ["HỆ THỐNG: Đã nhận tệp tin đầu vào. Bắt đầu khởi chạy tiến trình dịch ngầm..."],
         "output_zip": None,
         "images": []
     }
@@ -161,7 +199,7 @@ async def upload_zip(
     background_tasks.add_task(
         run_job_in_background,
         job_id,
-        zip_path,
+        pipeline_input_path,
         api_key,
         src_lang,
         tone,

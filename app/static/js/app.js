@@ -32,8 +32,8 @@ document.addEventListener("DOMContentLoaded", () => {
     const btnPrevPage = document.getElementById("btnPrevPage");
     const btnNextPage = document.getElementById("btnNextPage");
     
-    // Biến quản lý trạng thái của ứng dụng
-    let selectedFile = null;
+    // Biến quản lý trạng thái của ứng dụng (chứa 1 file ZIP hoặc nhiều file ảnh lẻ)
+    let selectedFiles = [];
     let currentJobId = null;
     let eventSource = null;
     let jobImages = [];
@@ -90,33 +90,58 @@ document.addEventListener("DOMContentLoaded", () => {
         const dt = e.dataTransfer;
         const files = dt.files;
         if (files.length > 0) {
-            handleFileSelect(files[0]);
+            handleFilesSelect(files);
         }
     });
 
     fileInput.addEventListener("change", (e) => {
         if (e.target.files.length > 0) {
-            handleFileSelect(e.target.files[0]);
+            handleFilesSelect(e.target.files);
         }
     });
 
-    function handleFileSelect(file) {
-        if (!file.name.endsWith(".zip")) {
-            addLogLine("HỆ THỐNG LỖI: Chỉ chấp nhận tệp tin định dạng nén ZIP.", "error-msg");
-            alert("Vui lòng tải lên file .zip chứa các hình ảnh truyện tranh!");
-            return;
-        }
+    function handleFilesSelect(filesList) {
+        if (filesList.length === 0) return;
         
-        selectedFile = file;
-        zipNameSpan.textContent = file.name;
-        zipSizeSpan.textContent = (file.size / (1024 * 1024)).toFixed(2) + " MB";
+        const firstFile = filesList[0];
+        // Kiểm tra xem có phải tải lên duy nhất 1 file ZIP không
+        const isZip = filesList.length === 1 && firstFile.name.endsWith(".zip");
+        
+        if (isZip) {
+            selectedFiles = [firstFile];
+            zipNameSpan.textContent = firstFile.name;
+            zipSizeSpan.textContent = (firstFile.size / (1024 * 1024)).toFixed(2) + " MB";
+            addLogLine(`Đã chọn file ZIP: ${firstFile.name} (${zipSizeSpan.textContent}). Sẵn sàng.`);
+        } else {
+            // Lọc ra danh sách các file ảnh hợp lệ
+            const imageExtensions = ['.png', '.jpg', '.jpeg', '.webp', '.bmp'];
+            selectedFiles = [];
+            
+            for (let i = 0; i < filesList.length; i++) {
+                const file = filesList[i];
+                const ext = file.name.slice(file.name.lastIndexOf(".")).toLowerCase();
+                if (imageExtensions.includes(ext)) {
+                    selectedFiles.push(file);
+                }
+            }
+            
+            if (selectedFiles.length === 0) {
+                addLogLine("HỆ THỐNG LỖI: Không tìm thấy tệp ảnh hợp lệ nào.", "error-msg");
+                alert("Vui lòng tải lên 1 file .zip hoặc chọn các tệp ảnh hợp lệ (.png, .jpg, .jpeg, .webp, .bmp)!");
+                return;
+            }
+            
+            // Tính tổng kích cỡ dung lượng ảnh lẻ
+            const totalSize = selectedFiles.reduce((acc, f) => acc + f.size, 0);
+            zipNameSpan.textContent = `Đã chọn ${selectedFiles.length} file ảnh lẻ`;
+            zipSizeSpan.textContent = (totalSize / (1024 * 1024)).toFixed(2) + " MB";
+            addLogLine(`Đã chọn ${selectedFiles.length} file ảnh lẻ (Tổng dung lượng: ${zipSizeSpan.textContent}). Sẵn sàng.`);
+        }
         
         // Cập nhật cấu trúc hiển thị giao diện sau khi chọn file thành công
         dropzone.querySelector(".dropzone-content").style.display = "none";
         selectedFileInfo.style.display = "flex";
         btnStartPipeline.disabled = false;
-        
-        addLogLine(`Đã chọn file: ${file.name} (${(file.size / (1024 * 1024)).toFixed(2)} MB). Sẵn sàng bắt đầu.`);
     }
 
     btnRemoveFile.addEventListener("click", (e) => {
@@ -125,7 +150,7 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     function resetFileSelection() {
-        selectedFile = null;
+        selectedFiles = [];
         fileInput.value = "";
         dropzone.querySelector(".dropzone-content").style.display = "flex";
         selectedFileInfo.style.display = "none";
@@ -175,7 +200,9 @@ document.addEventListener("DOMContentLoaded", () => {
         addLogLine("HỆ THỐNG: Đang chuẩn bị đóng gói dữ liệu gửi lên máy chủ...");
 
         const formData = new FormData();
-        formData.append("file", selectedFile);
+        selectedFiles.forEach(file => {
+            formData.append("files", file);
+        });
         formData.append("api_key", apiKey);
         formData.append("src_lang", srcLangSelect.value);
         formData.append("tone", translationToneSelect.value);

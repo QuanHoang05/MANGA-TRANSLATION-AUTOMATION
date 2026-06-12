@@ -57,31 +57,54 @@ class MangaPipeline:
         """
         Thực thi quy trình 5 bước tự động dịch truyện tranh.
         """
-        # Bước 1: Thu thập và chuẩn bị đầu vào (Giải nén tệp zip)
-        self.log("BƯỚC 1: Giải nén tệp tin ảnh đầu vào...", 5.0)
+        # Bước 1: Thu thập và chuẩn bị đầu vào (Giải nén hoặc đọc thư mục chứa ảnh thô)
+        self.log("BƯỚC 1: Thu thập và chuẩn bị ảnh đầu vào...", 5.0)
+        raw_extract_folder = os.path.join(temp_dir, "raw_extract")
         input_folder = os.path.join(temp_dir, "input")
         output_folder = os.path.join(temp_dir, "output")
+        os.makedirs(raw_extract_folder, exist_ok=True)
         os.makedirs(input_folder, exist_ok=True)
         os.makedirs(output_folder, exist_ok=True)
         
-        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-            zip_ref.extractall(input_folder)
+        # Nếu zip_path thực chất là thư mục chứa các ảnh đơn lẻ do người dùng chọn trực tiếp
+        if os.path.isdir(zip_path):
+            for file in os.listdir(zip_path):
+                src = os.path.join(zip_path, file)
+                if os.path.isfile(src):
+                    shutil.copy(src, os.path.join(raw_extract_folder, file))
+        else:
+            # Nếu là tệp ZIP lưu trữ ảnh
+            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                zip_ref.extractall(raw_extract_folder)
             
-        # Lấy danh sách tất cả các tệp tin ảnh hợp lệ và sắp xếp theo tên
+        # Thu thập toàn bộ tệp tin ảnh từ thư mục thô thô ban đầu
         image_extensions = ('.png', '.jpg', '.jpeg', '.webp', '.bmp')
-        images = []
-        for root, _, files in os.walk(input_folder):
+        raw_images = []
+        for root, _, files in os.walk(raw_extract_folder):
             for file in files:
                 if file.lower().endswith(image_extensions) and not file.startswith('._'):
-                    images.append(os.path.join(root, file))
+                    raw_images.append(os.path.join(root, file))
                     
-        # Sắp xếp theo thứ tự tự nhiên (tên tệp tăng dần)
-        images.sort()
-        
-        if not images:
-            raise ValueError("Không tìm thấy ảnh nào trong tệp ZIP tải lên.")
+        if not raw_images:
+            raise ValueError("Không tìm thấy ảnh hợp lệ nào trong dữ liệu tải lên.")
             
-        self.log(f"Đã tìm thấy {len(images)} ảnh truyện tranh. Bắt đầu OCR...", 10.0)
+        # Thuật toán sắp xếp tự nhiên (Natural Sort) tránh lỗi nhảy thứ tự số ví dụ: "2" đứng trước "10"
+        import re
+        def natural_sort_key(s):
+            return [int(text) if text.isdigit() else text.lower() for text in re.split(r'(\d+)', s)]
+            
+        raw_images.sort(key=natural_sort_key)
+        
+        # Chuẩn hóa tên ảnh về chuỗi số tăng dần liên tục (001, 002...) để tránh các ký tự tiếng Việt, khoảng trống gây lỗi dịch
+        images = []
+        for i, raw_img_path in enumerate(raw_images):
+            ext = os.path.splitext(raw_img_path)[1].lower()
+            new_name = f"{i+1:03d}{ext}"  # Tên chuẩn theo dạng 001.png, 002.jpg...
+            new_path = os.path.join(input_folder, new_name)
+            shutil.copy(raw_img_path, new_path)
+            images.append(new_path)
+            
+        self.log(f"Đã chuẩn hóa và tìm thấy {len(images)} ảnh truyện tranh. Bắt đầu OCR...", 10.0)
         
         # Bước 2: Nhận diện chữ bằng mô hình OCR (PaddleOCR)
         self.log("BƯỚC 2: Quét OCR nhận diện chữ trên toàn bộ ảnh...", 15.0)
