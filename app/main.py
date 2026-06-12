@@ -13,14 +13,14 @@ from starlette.requests import Request
 
 from app.pipeline import MangaPipeline
 
-# Initialize FastAPI App
+# Khởi tạo ứng dụng FastAPI
 app = FastAPI(
     title="Manga Translation Automation Pipeline",
-    description="Automated pipeline to extract, translate, and typeset manga pages.",
+    description="Hệ thống tự động dịch truyện tranh và chèn chữ thông minh.",
     version="1.0.0"
 )
 
-# CORS configuration
+# Cấu hình CORS (Cho phép chia sẻ tài nguyên chéo nguồn để dễ dàng debug và tích hợp)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -29,23 +29,23 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Ensure directories exist within workspace
+# Đảm bảo các thư mục cần thiết tồn tại trong không gian làm việc của dự án
 DATA_DIR = os.path.abspath("data")
 UPLOAD_DIR = os.path.join(DATA_DIR, "uploads")
 JOBS_DIR = os.path.join(DATA_DIR, "jobs")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 os.makedirs(JOBS_DIR, exist_ok=True)
 
-# Mount data directory for image preview access
+# Gắn thư mục data tĩnh để cho phép giao diện Client truy cập xem trước ảnh gốc và ảnh đã dịch
 app.mount("/data", StaticFiles(directory=DATA_DIR), name="data")
-# Mount static assets
+# Gắn thư mục static phục vụ các tệp tĩnh của giao diện (CSS, JS)
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
-# Templates for frontend
+# Cấu hình thư mục chứa các mẫu giao diện (Jinja2 Templates)
 templates = Jinja2Templates(directory="app/templates")
 
-# Global job store
-# Structure: { job_id: { "status": str, "progress": float, "logs": list, "output_zip": str, "images": list } }
+# Bộ lưu trữ trạng thái tiến trình công việc toàn cục (Global Job Store)
+# Cấu trúc dữ liệu: { job_id: { "status": str, "progress": float, "logs": list, "output_zip": str, "images": list } }
 jobs = {}
 
 
@@ -58,7 +58,7 @@ def run_job_in_background(
     batch_size_pages: int
 ):
     """
-    Executes the translation pipeline in a background thread and updates job state.
+    Thực thi quy trình dịch truyện tranh trong luồng chạy nền (background task) và cập nhật trạng thái phiên làm việc.
     """
     job_dir = os.path.join(JOBS_DIR, job_id)
     os.makedirs(job_dir, exist_ok=True)
@@ -80,10 +80,10 @@ def run_job_in_background(
             status_callback=status_callback
         )
         
-        # Run entire pipeline
+        # Chạy toàn bộ tiến trình dịch thuật (OCR -> Dịch -> Inpainting -> Vẽ chữ -> Đóng gói)
         pipeline.run_pipeline(zip_path, output_zip_path, temp_dir)
         
-        # Find images processed to display in UI comparison
+        # Tìm danh sách ảnh đã xử lý xong để trả về giao diện phục vụ so sánh kết quả gốc/dịch
         output_img_dir = os.path.join(temp_dir, "output")
         image_extensions = ('.png', '.jpg', '.jpeg', '.webp', '.bmp')
         processed_images = []
@@ -103,7 +103,7 @@ def run_job_in_background(
         jobs[job_id]["logs"].append(error_msg)
         jobs[job_id]["status"] = "failed"
     finally:
-        # Clean uploaded zip file to save space
+        # Xóa tệp ZIP đã tải lên để giải phóng dung lượng bộ nhớ đệm trên máy chủ
         if os.path.exists(zip_path):
             try:
                 os.remove(zip_path)
@@ -114,7 +114,7 @@ def run_job_in_background(
 @app.get("/", response_class=HTMLResponse)
 async def get_index(request: Request):
     """
-    Serves the main application landing page.
+    Trả về giao diện trang chủ chính của ứng dụng dịch truyện tranh.
     """
     return templates.TemplateResponse("index.html", {"request": request})
 
@@ -129,7 +129,7 @@ async def upload_zip(
     batch_size_pages: int = Form(10)
 ):
     """
-    Accepts the manga archive ZIP upload, initializes job, and starts background runner.
+    Tiếp nhận tệp ZIP truyện tranh tải lên từ Client, khởi tạo tiến trình xử lý ngầm và trả về ID phiên làm việc.
     """
     if not file.filename.endswith('.zip'):
         raise HTTPException(status_code=400, detail="Chỉ chấp nhận tệp tin định dạng .zip")
@@ -138,23 +138,23 @@ async def upload_zip(
     zip_filename = f"{job_id}.zip"
     zip_path = os.path.join(UPLOAD_DIR, zip_filename)
     
-    # Save uploaded file
+    # Lưu tệp tin tải lên vào bộ nhớ đệm tạm thời trên máy chủ
     try:
         with open(zip_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Không thể lưu tệp tải lên: {str(e)}")
         
-    # Create job entry
+    # Khởi tạo thông tin phiên làm việc trong danh sách quản lý trạng thái
     jobs[job_id] = {
         "status": "processing",
         "progress": 0.0,
-        "logs": ["HỆ THỐNG: Đã nhận tệp ZIP. Bắt đầu phiên làm việc..."],
+        "logs": ["HỆ THỐNG: Đã nhận tệp ZIP. Bắt đầu khởi chạy tiến trình dịch ngầm..."],
         "output_zip": None,
         "images": []
     }
     
-    # Run in background
+    # Kích hoạt tác vụ dịch chạy ngầm thông qua BackgroundTasks của FastAPI
     background_tasks.add_task(
         run_job_in_background,
         job_id,
@@ -171,7 +171,7 @@ async def upload_zip(
 @app.get("/api/stream-progress")
 async def stream_progress(job_id: str):
     """
-    Streams job processing progress logs and status updates to the client in real-time.
+    Truyền phát trực tiếp logs tiến trình và cập nhật phần trăm hoàn thành về Client theo thời gian thực (SSE).
     """
     async def event_generator():
         if job_id not in jobs:
@@ -184,7 +184,7 @@ async def stream_progress(job_id: str):
             if not job:
                 break
                 
-            # Send any new logs
+            # Gửi đi các dòng log mới phát sinh trong tiến trình chạy ngầm
             logs_count = len(job["logs"])
             if last_log_idx < logs_count:
                 for idx in range(last_log_idx, logs_count):
@@ -209,11 +209,11 @@ async def stream_progress(job_id: str):
 @app.get("/api/download/{job_id}")
 async def download_translated(job_id: str):
     """
-    Downloads the processed ZIP containing the translated images.
+    Cho phép tải về tệp ZIP chứa toàn bộ các ảnh truyện tranh kết quả đã được dịch và vẽ chữ hoàn chỉnh.
     """
     job = jobs.get(job_id)
     if not job or job["status"] != "completed" or not job["output_zip"] or not os.path.exists(job["output_zip"]):
-        raise HTTPException(status_code=404, detail="Tệp kết quả dịch không tồn tại hoặc chưa hoàn thành.")
+        raise HTTPException(status_code=404, detail="Tệp kết quả dịch không tồn tại hoặc phiên làm việc chưa hoàn thành.")
         
     return FileResponse(
         path=job["output_zip"],

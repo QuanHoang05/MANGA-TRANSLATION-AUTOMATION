@@ -1,5 +1,5 @@
 document.addEventListener("DOMContentLoaded", () => {
-    // DOM Elements
+    // Tham chiếu các phần tử giao diện DOM
     const apiKeyInput = document.getElementById("apiKey");
     const toggleApiVisibilityBtn = document.getElementById("toggleApiVisibility");
     const srcLangSelect = document.getElementById("srcLang");
@@ -31,20 +31,20 @@ document.addEventListener("DOMContentLoaded", () => {
     const btnPrevPage = document.getElementById("btnPrevPage");
     const btnNextPage = document.getElementById("btnNextPage");
     
-    // Application States
+    // Biến quản lý trạng thái của ứng dụng
     let selectedFile = null;
     let currentJobId = null;
     let eventSource = null;
     let jobImages = [];
     let currentImageIndex = 0;
 
-    // 1. LocalStorage for API Key
+    // 1. Quản lý lưu trữ cục bộ (LocalStorage) cho API Key để tiện lợi sử dụng lần sau
     const cachedApiKey = localStorage.getItem("manga_gemini_api_key");
     if (cachedApiKey) {
         apiKeyInput.value = cachedApiKey;
     }
 
-    // Toggle API Key visibility
+    // Bật/tắt hiển thị mật khẩu API Key
     toggleApiVisibilityBtn.addEventListener("click", () => {
         if (apiKeyInput.type === "password") {
             apiKeyInput.type = "text";
@@ -55,20 +55,20 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     });
 
-    // 2. Batch Size Slider UI update
+    // 2. Cập nhật nhãn hiển thị số lượng trang gộp khi kéo thanh trượt (Batch Size)
     batchSizeInput.addEventListener("input", (e) => {
         batchSizeValue.textContent = `${e.target.value} trang`;
     });
 
-    // 3. Dropzone & File Selection Controls
+    // 3. Quản lý kéo thả và tương tác vùng chọn tệp tin ZIP
     dropzone.addEventListener("click", (e) => {
-        // Prevent click if clicking remove file
+        // Tránh kích hoạt cửa sổ duyệt file nếu nhấn vào nút hủy tệp
         if (e.target !== btnRemoveFile && !btnRemoveFile.contains(e.target)) {
             fileInput.click();
         }
     });
 
-    // Drag-and-drop animations
+    // Các hiệu ứng đồ họa kéo thả tệp (Drag-and-drop animations)
     ["dragenter", "dragover"].forEach(eventName => {
         dropzone.addEventListener(eventName, (e) => {
             e.preventDefault();
@@ -110,7 +110,7 @@ document.addEventListener("DOMContentLoaded", () => {
         zipNameSpan.textContent = file.name;
         zipSizeSpan.textContent = (file.size / (1024 * 1024)).toFixed(2) + " MB";
         
-        // Update UI View
+        // Cập nhật cấu trúc hiển thị giao diện sau khi chọn file thành công
         dropzone.querySelector(".dropzone-content").style.display = "none";
         selectedFileInfo.style.display = "flex";
         btnStartPipeline.disabled = false;
@@ -132,7 +132,7 @@ document.addEventListener("DOMContentLoaded", () => {
         addLogLine("Đã hủy bỏ file đã chọn.");
     }
 
-    // 4. Console Logs Logger
+    // 4. Hàm bổ trợ in dòng logs console của hệ thống
     function addLogLine(text, className = "") {
         const line = document.createElement("div");
         line.className = `log-line ${className}`;
@@ -141,7 +141,7 @@ document.addEventListener("DOMContentLoaded", () => {
         consoleLogs.scrollTop = consoleLogs.scrollHeight;
     }
 
-    // 5. Trigger Pipeline Execution
+    // 5. Lắng nghe sự kiện kích hoạt chạy quy trình dịch tự động
     btnStartPipeline.addEventListener("click", async () => {
         const apiKey = apiKeyInput.value.trim();
         if (!apiKey) {
@@ -150,10 +150,10 @@ document.addEventListener("DOMContentLoaded", () => {
             return;
         }
 
-        // Cache key in local storage
+        // Lưu trữ khóa API Key vào bộ nhớ LocalStorage của trình duyệt
         localStorage.setItem("manga_gemini_api_key", apiKey);
 
-        // Lock UI controls
+        // Vô hiệu hóa tạm thời các nút nhập để ngăn chặn gửi nhiều yêu cầu song song gây xung đột
         btnStartPipeline.disabled = true;
         btnRemoveFile.disabled = true;
         apiKeyInput.disabled = true;
@@ -164,7 +164,7 @@ document.addEventListener("DOMContentLoaded", () => {
         btnDownload.classList.add("disabled");
         previewCard.style.display = "none";
         
-        // Reset steps track UI
+        // Cài đặt lại trạng thái các bước tiến trình hiển thị
         document.querySelectorAll(".step-item").forEach(item => {
             item.classList.remove("active", "done");
         });
@@ -194,7 +194,7 @@ document.addEventListener("DOMContentLoaded", () => {
             currentJobId = data.job_id;
             addLogLine(`HỆ THỐNG: Upload file thành công. ID phiên làm việc: ${currentJobId}`);
             
-            // Connect to server-sent events for progress updates
+            // Mở kết nối luồng sự kiện SSE để nhận tiến độ dịch thời gian thực từ máy chủ
             connectProgressSSE(currentJobId);
 
         } catch (error) {
@@ -220,19 +220,19 @@ document.addEventListener("DOMContentLoaded", () => {
                 return;
             }
 
-            // Update Progress Percentage & Bar
+            // Cập nhật phần trăm hoàn thành và thanh tiến trình tương ứng
             const progress = data.progress || 0;
             progressPercent.textContent = Math.round(progress) + "%";
             progressFill.style.width = progress + "%";
             
-            // Status Updates
+            // Nhận và in log dòng điều khiển từ server, phân màu log lỗi/hệ thống
             if (data.log) {
                 const isErr = data.log.includes("LỖI") || data.log.includes("Error") || data.log.includes("fail");
                 const isSystem = data.log.includes("BƯỚC") || data.log.includes("HỆ THỐNG");
                 addLogLine(data.log, isErr ? "error-msg" : (isSystem ? "system-msg" : ""));
             }
 
-            // Process State and Step Tracker Highlights
+            // Phân tích trạng thái tiến trình để làm sáng Step Tracker
             updateStepTracker(progress, data.status);
             
             if (data.status === "completed") {
@@ -240,11 +240,11 @@ document.addEventListener("DOMContentLoaded", () => {
                 statusBadge.className = "status-badge state-completed";
                 progressLabel.textContent = "Hoàn thành toàn bộ quy trình dịch!";
                 
-                // Enable download
+                // Mở khóa cho phép tải xuống tệp tin dịch hoàn chỉnh
                 btnDownload.href = `/api/download/${jobId}`;
                 btnDownload.classList.remove("disabled");
                 
-                // Show comparisons
+                // Hiển thị phần so sánh hình ảnh trước/sau
                 if (data.images && data.images.length > 0) {
                     jobImages = data.images;
                     currentImageIndex = 0;
@@ -283,7 +283,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
         if (status === "failed") return;
 
-        // Reset
+        // Reset trạng thái làm sáng
         [s1, s2, s3, s4, s5].forEach(s => s.classList.remove("active", "done"));
 
         if (progress >= 5 && progress < 15) {
@@ -325,7 +325,7 @@ document.addEventListener("DOMContentLoaded", () => {
         btnLoader.style.display = "none";
     }
 
-    // 6. Preview & Comparative Viewer Controls
+    // 6. Quản lý tương tác của bảng so sánh ảnh trước/sau
     function showImageComparison(jobId) {
         previewCard.style.display = "block";
         updatePageUrls(jobId);
@@ -335,13 +335,13 @@ document.addEventListener("DOMContentLoaded", () => {
         if (jobImages.length === 0) return;
         const currentFilename = jobImages[currentImageIndex];
         
-        // Paths match FastAPI Static Files mount `/data/jobs/{job_id}/temp/...`
+        // Đường dẫn tương thích với FastAPI Static Files mount tại "/data"
         imgOriginal.src = `/data/jobs/${jobId}/temp/input/${currentFilename}`;
         imgTranslated.src = `/data/jobs/${jobId}/temp/output/${currentFilename}`;
         
         pageIndicator.textContent = `Trang ${currentImageIndex + 1} / ${jobImages.length} (${currentFilename})`;
         
-        // Disable nav buttons if border limits reached
+        // Vô hiệu hóa nút chuyển hướng nếu đạt tới giới hạn trang đầu/cuối
         btnPrevPage.disabled = currentImageIndex === 0;
         btnNextPage.disabled = currentImageIndex === jobImages.length - 1;
     }
