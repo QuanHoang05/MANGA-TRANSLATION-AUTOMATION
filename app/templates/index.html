@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Manga Translation Automation Pipeline</title>
+    <link rel="icon" href="https://img.icons8.com/color/48/manga.png" type="image/png">
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    
+    <!-- CSS Style -->
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div class="glass-bg"></div>
+    <div class="app-container">
+        
+        <!-- Header -->
+        <header class="app-header">
+            <div class="logo-area">
+                <img src="https://img.icons8.com/color/96/manga.png" alt="Manga Icon" class="app-logo">
+                <div class="logo-text">
+                    <h1>Manga Translation</h1>
+                    <span class="badge">Automation Pipeline v1.0</span>
+                </div>
+            </div>
+            <p class="subtitle">Hệ thống dịch thuật truyện tranh tự động bằng AI, giữ nguyên bố cục và xóa chữ thông minh</p>
+        </header>
+
+        <!-- Main Workspace -->
+        <main class="workspace-grid">
+            
+            <!-- Left Panel: Configuration & Upload -->
+            <section class="left-panel">
+                
+                <!-- Settings Card -->
+                <div class="glass-card settings-card">
+                    <h2><i class="icon-settings"></i> Cấu Hình Hệ Thống</h2>
+                    
+                    <div class="input-group">
+                        <label for="apiKey">Gemini API Key (Google AI Studio)</label>
+                        <div class="password-wrapper">
+                            <input type="password" id="apiKey" placeholder="AIzaSy..." autocomplete="off">
+                            <button type="button" id="toggleApiVisibility" class="btn-icon">👁️</button>
+                        </div>
+                        <small class="help-text">Nhập API key miễn phí của bạn. Key được lưu bảo mật ở trình duyệt của bạn (LocalStorage).</small>
+                    </div>
+
+                    <div class="row-inputs">
+                        <div class="input-group half">
+                            <label for="srcLang">Ngôn Ngữ OCR Gốc</label>
+                            <select id="srcLang">
+                                <option value="en">Tiếng Anh (English)</option>
+                                <option value="ch">Tiếng Trung (Chinese)</option>
+                                <option value="japan">Tiếng Nhật (Japanese)</option>
+                                <option value="ko">Tiếng Hàn (Korean)</option>
+                            </select>
+                        </div>
+
+                        <div class="input-group half">
+                            <label for="translationTone">Văn Phong Dịch</label>
+                            <select id="translationTone">
+                                <option value="tự nhiên">Tự nhiên (Mặc định)</option>
+                                <option value="cổ trang">Cổ trang (Ta - Ngươi, Thiếu chủ...)</option>
+                                <option value="dễ thương">Cute / Đáng yêu</option>
+                                <option value="lịch sự">Lịch sự / Trang trọng</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="input-group">
+                        <div class="slider-header">
+                            <label for="batchSize">Số trang gộp dịch (Batch Size)</label>
+                            <span id="batchSizeValue">10 trang</span>
+                        </div>
+                        <input type="range" id="batchSize" min="5" max="20" value="10">
+                        <small class="help-text">Gộp trang để AI hiểu ngữ cảnh toàn diện, dịch đúng xưng hô nhân vật.</small>
+                    </div>
+                </div>
+
+                <!-- Upload Card -->
+                <div class="glass-card upload-card">
+                    <h2><i class="icon-upload"></i> Tải Lên Tập Truyện</h2>
+                    
+                    <div class="dropzone" id="dropzone">
+                        <input type="file" id="fileInput" accept=".zip" style="display: none;">
+                        <div class="dropzone-content">
+                            <div class="upload-icon">📁</div>
+                            <h3>Kéo & thả file ZIP ảnh truyện vào đây</h3>
+                            <p>hoặc nhấn để duyệt file từ máy tính</p>
+                            <span class="file-limits">Định dạng chấp nhận: .zip (chứa các trang ảnh 001.png, 002.jpg...)</span>
+                        </div>
+                        <div class="selected-file-info" id="selectedFileInfo" style="display: none;">
+                            <div class="zip-details">
+                                <span class="zip-name" id="zipName">manga_chapter.zip</span>
+                                <span class="zip-size" id="zipSize">0.0 MB</span>
+                            </div>
+                            <button type="button" class="btn-remove-file" id="btnRemoveFile">✕</button>
+                        </div>
+                    </div>
+
+                    <button type="button" id="btnStartPipeline" class="btn-primary" disabled>
+                        <span>Bắt Đầu Dịch Tự Động</span>
+                        <div class="loader-ring" id="btnLoader" style="display: none;"></div>
+                    </button>
+                </div>
+                
+            </section>
+
+            <!-- Right Panel: Processing Logs & Previews -->
+            <section class="right-panel">
+                
+                <!-- Monitor Card -->
+                <div class="glass-card monitor-card">
+                    <div class="monitor-header">
+                        <h2><i class="icon-activity"></i> Tiến Trình Xử Lý</h2>
+                        <span class="status-badge state-idle" id="statusBadge">SẴN SÀNG</span>
+                    </div>
+
+                    <!-- Progress Bar Area -->
+                    <div class="progress-section">
+                        <div class="progress-meta">
+                            <span class="progress-percent" id="progressPercent">0%</span>
+                            <span class="progress-label" id="progressLabel">Chưa khởi chạy</span>
+                        </div>
+                        <div class="progress-track">
+                            <div class="progress-fill" id="progressFill"></div>
+                        </div>
+                    </div>
+
+                    <!-- Step Tracker UI -->
+                    <div class="steps-tracker">
+                        <div class="step-item" id="step1">
+                            <div class="step-indicator">1</div>
+                            <span class="step-name">Giải nén ZIP</span>
+                        </div>
+                        <div class="step-item" id="step2">
+                            <div class="step-indicator">2</div>
+                            <span class="step-name">Quét chữ OCR</span>
+                        </div>
+                        <div class="step-item" id="step3">
+                            <div class="step-indicator">3</div>
+                            <span class="step-name">Dịch thuật Gemini</span>
+                        </div>
+                        <div class="step-item" id="step4">
+                            <div class="step-indicator">4</div>
+                            <span class="step-name">Inpainting & Vẽ chữ</span>
+                        </div>
+                        <div class="step-item" id="step5">
+                            <div class="step-indicator">5</div>
+                            <span class="step-name">Đóng gói đầu ra</span>
+                        </div>
+                    </div>
+
+                    <!-- Live Logs Console -->
+                    <div class="console-box">
+                        <div class="console-header">
+                            <span class="console-dot red"></span>
+                            <span class="console-dot yellow"></span>
+                            <span class="console-dot green"></span>
+                            <span class="console-title">Hệ Thống Logs</span>
+                        </div>
+                        <div class="console-body" id="consoleLogs">
+                            <div class="log-line system-msg">Hệ thống Manga Translation Automation đã sẵn sàng. Vui lòng nhập API Key và tải file zip lên.</div>
+                        </div>
+                    </div>
+
+                    <!-- Download Trigger -->
+                    <div class="download-container">
+                        <a href="#" id="btnDownload" class="btn-success disabled">
+                            <span>📥 Tải Xuống File Đã Dịch Sạch Sẽ</span>
+                        </a>
+                    </div>
+                </div>
+
+                <!-- Preview Card (Visible after complete) -->
+                <div class="glass-card preview-card" id="previewCard" style="display: none;">
+                    <div class="preview-header">
+                        <h2><i class="icon-eye"></i> So Sánh Kết Quả Trước & Sau</h2>
+                        <div class="page-controls">
+                            <button type="button" class="btn-nav" id="btnPrevPage">◀</button>
+                            <span class="page-indicator" id="pageIndicator">Trang 1 / 1</span>
+                            <button type="button" class="btn-nav" id="btnNextPage">▶</button>
+                        </div>
+                    </div>
+                    
+                    <div class="comparison-container">
+                        <div class="comparison-half">
+                            <h4>ẢNH GỐC (OCR)</h4>
+                            <div class="img-wrapper">
+                                <img src="" id="imgOriginal" alt="Original Page">
+                            </div>
+                        </div>
+                        <div class="comparison-half">
+                            <h4>ẢNH ĐÃ DỊCH & VẼ CHỮ</h4>
+                            <div class="img-wrapper">
+                                <img src="" id="imgTranslated" alt="Translated Page">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+            </section>
+            
+        </main>
+        
+        <footer class="app-footer">
+            <p>© 2026 DeepMind Antigravity. Phát triển tối ưu hóa xử lý gộp cho Google Colab & Docker.</p>
+        </footer>
+    </div>
+    
+    <!-- JS Logic -->
+    <script src="/static/js/app.js"></script>
+</body>
+</html>

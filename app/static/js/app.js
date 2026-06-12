@@ -1,0 +1,362 @@
+document.addEventListener("DOMContentLoaded", () => {
+    // DOM Elements
+    const apiKeyInput = document.getElementById("apiKey");
+    const toggleApiVisibilityBtn = document.getElementById("toggleApiVisibility");
+    const srcLangSelect = document.getElementById("srcLang");
+    const translationToneSelect = document.getElementById("translationTone");
+    const batchSizeInput = document.getElementById("batchSize");
+    const batchSizeValue = document.getElementById("batchSizeValue");
+    
+    const dropzone = document.getElementById("dropzone");
+    const fileInput = document.getElementById("fileInput");
+    const selectedFileInfo = document.getElementById("selectedFileInfo");
+    const zipNameSpan = document.getElementById("zipName");
+    const zipSizeSpan = document.getElementById("zipSize");
+    const btnRemoveFile = document.getElementById("btnRemoveFile");
+    const btnStartPipeline = document.getElementById("btnStartPipeline");
+    const btnLoader = document.getElementById("btnLoader");
+    
+    const statusBadge = document.getElementById("statusBadge");
+    const progressPercent = document.getElementById("progressPercent");
+    const progressLabel = document.getElementById("progressLabel");
+    const progressFill = document.getElementById("progressFill");
+    
+    const consoleLogs = document.getElementById("consoleLogs");
+    const btnDownload = document.getElementById("btnDownload");
+    
+    const previewCard = document.getElementById("previewCard");
+    const imgOriginal = document.getElementById("imgOriginal");
+    const imgTranslated = document.getElementById("imgTranslated");
+    const pageIndicator = document.getElementById("pageIndicator");
+    const btnPrevPage = document.getElementById("btnPrevPage");
+    const btnNextPage = document.getElementById("btnNextPage");
+    
+    // Application States
+    let selectedFile = null;
+    let currentJobId = null;
+    let eventSource = null;
+    let jobImages = [];
+    let currentImageIndex = 0;
+
+    // 1. LocalStorage for API Key
+    const cachedApiKey = localStorage.getItem("manga_gemini_api_key");
+    if (cachedApiKey) {
+        apiKeyInput.value = cachedApiKey;
+    }
+
+    // Toggle API Key visibility
+    toggleApiVisibilityBtn.addEventListener("click", () => {
+        if (apiKeyInput.type === "password") {
+            apiKeyInput.type = "text";
+            toggleApiVisibilityBtn.textContent = "🙈";
+        } else {
+            apiKeyInput.type = "password";
+            toggleApiVisibilityBtn.textContent = "👁️";
+        }
+    });
+
+    // 2. Batch Size Slider UI update
+    batchSizeInput.addEventListener("input", (e) => {
+        batchSizeValue.textContent = `${e.target.value} trang`;
+    });
+
+    // 3. Dropzone & File Selection Controls
+    dropzone.addEventListener("click", (e) => {
+        // Prevent click if clicking remove file
+        if (e.target !== btnRemoveFile && !btnRemoveFile.contains(e.target)) {
+            fileInput.click();
+        }
+    });
+
+    // Drag-and-drop animations
+    ["dragenter", "dragover"].forEach(eventName => {
+        dropzone.addEventListener(eventName, (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            dropzone.classList.add("dragover");
+        }, false);
+    });
+
+    ["dragleave", "drop"].forEach(eventName => {
+        dropzone.addEventListener(eventName, (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            dropzone.classList.remove("dragover");
+        }, false);
+    });
+
+    dropzone.addEventListener("drop", (e) => {
+        const dt = e.dataTransfer;
+        const files = dt.files;
+        if (files.length > 0) {
+            handleFileSelect(files[0]);
+        }
+    });
+
+    fileInput.addEventListener("change", (e) => {
+        if (e.target.files.length > 0) {
+            handleFileSelect(e.target.files[0]);
+        }
+    });
+
+    function handleFileSelect(file) {
+        if (!file.name.endsWith(".zip")) {
+            addLogLine("HỆ THỐNG LỖI: Chỉ chấp nhận tệp tin định dạng nén ZIP.", "error-msg");
+            alert("Vui lòng tải lên file .zip chứa các hình ảnh truyện tranh!");
+            return;
+        }
+        
+        selectedFile = file;
+        zipNameSpan.textContent = file.name;
+        zipSizeSpan.textContent = (file.size / (1024 * 1024)).toFixed(2) + " MB";
+        
+        // Update UI View
+        dropzone.querySelector(".dropzone-content").style.display = "none";
+        selectedFileInfo.style.display = "flex";
+        btnStartPipeline.disabled = false;
+        
+        addLogLine(`Đã chọn file: ${file.name} (${(file.size / (1024 * 1024)).toFixed(2)} MB). Sẵn sàng bắt đầu.`);
+    }
+
+    btnRemoveFile.addEventListener("click", (e) => {
+        e.stopPropagation();
+        resetFileSelection();
+    });
+
+    function resetFileSelection() {
+        selectedFile = null;
+        fileInput.value = "";
+        dropzone.querySelector(".dropzone-content").style.display = "flex";
+        selectedFileInfo.style.display = "none";
+        btnStartPipeline.disabled = true;
+        addLogLine("Đã hủy bỏ file đã chọn.");
+    }
+
+    // 4. Console Logs Logger
+    function addLogLine(text, className = "") {
+        const line = document.createElement("div");
+        line.className = `log-line ${className}`;
+        line.textContent = `[${new Date().toLocaleTimeString()}] ${text}`;
+        consoleLogs.appendChild(line);
+        consoleLogs.scrollTop = consoleLogs.scrollHeight;
+    }
+
+    // 5. Trigger Pipeline Execution
+    btnStartPipeline.addEventListener("click", async () => {
+        const apiKey = apiKeyInput.value.trim();
+        if (!apiKey) {
+            alert("Vui lòng điền Gemini API Key để dịch thuật!");
+            apiKeyInput.focus();
+            return;
+        }
+
+        // Cache key in local storage
+        localStorage.setItem("manga_gemini_api_key", apiKey);
+
+        // Lock UI controls
+        btnStartPipeline.disabled = true;
+        btnRemoveFile.disabled = true;
+        apiKeyInput.disabled = true;
+        srcLangSelect.disabled = true;
+        translationToneSelect.disabled = true;
+        batchSizeInput.disabled = true;
+        btnLoader.style.display = "inline-block";
+        btnDownload.classList.add("disabled");
+        previewCard.style.display = "none";
+        
+        // Reset steps track UI
+        document.querySelectorAll(".step-item").forEach(item => {
+            item.classList.remove("active", "done");
+        });
+        
+        consoleLogs.innerHTML = "";
+        addLogLine("HỆ THỐNG: Đang chuẩn bị đóng gói dữ liệu gửi lên máy chủ...");
+
+        const formData = new FormData();
+        formData.append("file", selectedFile);
+        formData.append("api_key", apiKey);
+        formData.append("src_lang", srcLangSelect.value);
+        formData.append("tone", translationToneSelect.value);
+        formData.append("batch_size_pages", batchSizeInput.value);
+
+        try {
+            const response = await fetch("/api/upload", {
+                method: "POST",
+                body: formData
+            });
+
+            if (!response.ok) {
+                const err = await response.json();
+                throw new Error(err.detail || "Upload thất bại.");
+            }
+
+            const data = await response.json();
+            currentJobId = data.job_id;
+            addLogLine(`HỆ THỐNG: Upload file thành công. ID phiên làm việc: ${currentJobId}`);
+            
+            // Connect to server-sent events for progress updates
+            connectProgressSSE(currentJobId);
+
+        } catch (error) {
+            addLogLine(`LỖI KHỞI CHẠY: ${error.message}`, "error-msg");
+            unlockUI();
+        }
+    });
+
+    function connectProgressSSE(jobId) {
+        if (eventSource) {
+            eventSource.close();
+        }
+
+        eventSource = new EventSource(`/api/stream-progress?job_id=${jobId}`);
+
+        eventSource.onmessage = (event) => {
+            const data = JSON.parse(event.data);
+
+            if (data.error) {
+                addLogLine(`SSE LỖI: ${data.error}`, "error-msg");
+                eventSource.close();
+                unlockUI();
+                return;
+            }
+
+            // Update Progress Percentage & Bar
+            const progress = data.progress || 0;
+            progressPercent.textContent = Math.round(progress) + "%";
+            progressFill.style.width = progress + "%";
+            
+            // Status Updates
+            if (data.log) {
+                const isErr = data.log.includes("LỖI") || data.log.includes("Error") || data.log.includes("fail");
+                const isSystem = data.log.includes("BƯỚC") || data.log.includes("HỆ THỐNG");
+                addLogLine(data.log, isErr ? "error-msg" : (isSystem ? "system-msg" : ""));
+            }
+
+            // Process State and Step Tracker Highlights
+            updateStepTracker(progress, data.status);
+            
+            if (data.status === "completed") {
+                statusBadge.textContent = "HOÀN THÀNH";
+                statusBadge.className = "status-badge state-completed";
+                progressLabel.textContent = "Hoàn thành toàn bộ quy trình dịch!";
+                
+                // Enable download
+                btnDownload.href = `/api/download/${jobId}`;
+                btnDownload.classList.remove("disabled");
+                
+                // Show comparisons
+                if (data.images && data.images.length > 0) {
+                    jobImages = data.images;
+                    currentImageIndex = 0;
+                    showImageComparison(jobId);
+                }
+
+                eventSource.close();
+                unlockUI();
+            } else if (data.status === "failed") {
+                statusBadge.textContent = "THẤT BẠI";
+                statusBadge.className = "status-badge state-failed";
+                progressLabel.textContent = "Tiến trình bị gián đoạn do lỗi.";
+                eventSource.close();
+                unlockUI();
+            } else {
+                statusBadge.textContent = "ĐANG XỬ LÝ";
+                statusBadge.className = "status-badge state-processing";
+                progressLabel.textContent = "Đang phân tích và dịch...";
+            }
+        };
+
+        eventSource.onerror = (err) => {
+            console.error("EventSource error:", err);
+            addLogLine("HỆ THỐNG: Ngắt kết nối SSE dòng log hoặc server khởi động lại.", "error-msg");
+            eventSource.close();
+            unlockUI();
+        };
+    }
+
+    function updateStepTracker(progress, status) {
+        const s1 = document.getElementById("step1");
+        const s2 = document.getElementById("step2");
+        const s3 = document.getElementById("step3");
+        const s4 = document.getElementById("step4");
+        const s5 = document.getElementById("step5");
+
+        if (status === "failed") return;
+
+        // Reset
+        [s1, s2, s3, s4, s5].forEach(s => s.classList.remove("active", "done"));
+
+        if (progress >= 5 && progress < 15) {
+            s1.classList.add("active");
+        } else if (progress >= 15 && progress < 45) {
+            s1.classList.add("done");
+            s2.classList.add("active");
+        } else if (progress >= 45 && progress < 70) {
+            s1.classList.add("done");
+            s2.classList.add("done");
+            s3.classList.add("active");
+        } else if (progress >= 70 && progress < 90) {
+            s1.classList.add("done");
+            s2.classList.add("done");
+            s3.classList.add("done");
+            s4.classList.add("active");
+        } else if (progress >= 90 && progress < 100) {
+            s1.classList.add("done");
+            s2.classList.add("done");
+            s3.classList.add("done");
+            s4.classList.add("done");
+            s5.classList.add("active");
+        } else if (progress === 100) {
+            s1.classList.add("done");
+            s2.classList.add("done");
+            s3.classList.add("done");
+            s4.classList.add("done");
+            s5.classList.add("done");
+        }
+    }
+
+    function unlockUI() {
+        btnStartPipeline.disabled = false;
+        btnRemoveFile.disabled = false;
+        apiKeyInput.disabled = false;
+        srcLangSelect.disabled = false;
+        translationToneSelect.disabled = false;
+        batchSizeInput.disabled = false;
+        btnLoader.style.display = "none";
+    }
+
+    // 6. Preview & Comparative Viewer Controls
+    function showImageComparison(jobId) {
+        previewCard.style.display = "block";
+        updatePageUrls(jobId);
+    }
+
+    function updatePageUrls(jobId) {
+        if (jobImages.length === 0) return;
+        const currentFilename = jobImages[currentImageIndex];
+        
+        // Paths match FastAPI Static Files mount `/data/jobs/{job_id}/temp/...`
+        imgOriginal.src = `/data/jobs/${jobId}/temp/input/${currentFilename}`;
+        imgTranslated.src = `/data/jobs/${jobId}/temp/output/${currentFilename}`;
+        
+        pageIndicator.textContent = `Trang ${currentImageIndex + 1} / ${jobImages.length} (${currentFilename})`;
+        
+        // Disable nav buttons if border limits reached
+        btnPrevPage.disabled = currentImageIndex === 0;
+        btnNextPage.disabled = currentImageIndex === jobImages.length - 1;
+    }
+
+    btnPrevPage.addEventListener("click", () => {
+        if (currentImageIndex > 0) {
+            currentImageIndex--;
+            updatePageUrls(currentJobId);
+        }
+    });
+
+    btnNextPage.addEventListener("click", () => {
+        if (currentImageIndex < jobImages.length - 1) {
+            currentImageIndex++;
+            updatePageUrls(currentJobId);
+        }
+    });
+});
