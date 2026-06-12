@@ -18,18 +18,29 @@ def get_ocr(lang):
         # Import bên trong hàm để giúp ứng dụng khởi động nhanh hơn và tránh lỗi crash
         # nếu thư viện paddleocr chưa được cài đặt
         from paddleocr import PaddleOCR
-        print(f"Đang khởi tạo đối tượng PaddleOCR cho ngôn ngữ: {lang}...")
-        # show_log=False giúp ẩn các nhật ký log không cần thiết của PaddleOCR
-        _ocr_instances[lang] = PaddleOCR(use_angle_cls=True, lang=lang, show_log=False)
+        import paddle
+        
+        # Tự động kiểm tra xem thiết bị hiện tại có hỗ trợ GPU/CUDA không để tối ưu tốc độ
+        use_gpu = False
+        try:
+            use_gpu = paddle.device.is_compiled_with_cuda()
+            print(f"Hệ thống phát hiện hỗ trợ GPU: {use_gpu}")
+        except Exception as e:
+            print(f"Không thể kiểm tra GPU: {str(e)}. Mặc định chuyển sang chạy bằng CPU.")
+            
+        print(f"Đang khởi tạo đối tượng PaddleOCR cho ngôn ngữ: {lang} (Chạy trên GPU = {use_gpu})...")
+        # Khởi tạo mô hình OCR với cờ use_gpu tự động cấu hình
+        _ocr_instances[lang] = PaddleOCR(use_angle_cls=True, lang=lang, show_log=False, use_gpu=use_gpu)
     return _ocr_instances[lang]
 
 
 class MangaPipeline:
-    def __init__(self, api_key: str, src_lang: str = "en", tone: str = "tự nhiên", batch_size_pages: int = 10, status_callback=None):
+    def __init__(self, api_key: str, src_lang: str = "en", tone: str = "tự nhiên", batch_size_pages: int = 10, additional_instructions: str = "", status_callback=None):
         self.api_key = api_key
         self.src_lang = src_lang
         self.tone = tone
         self.batch_size_pages = batch_size_pages
+        self.additional_instructions = additional_instructions
         self.status_callback = status_callback
         
         # Cấu hình API cho Google Gemini
@@ -255,7 +266,13 @@ HƯỚNG DẪN XƯNG HÔ & PHONG CÁCH:
 - Đảm bảo xưng hô đồng bộ, tự nhiên và phù hợp với ngữ cảnh của câu chuyện (ví dụ: Ta - Ngươi, Thiếu chủ - Đại nhân, Tôi - Cậu, Anh - Em, Tỷ tỷ - Muội muội...).
 - Tông giọng dịch yêu cầu: {self.tone} (ví dụ: tự nhiên, lịch sự, cổ trang, dễ thương).
 - Dựa vào mạch truyện của các câu thoại liên tiếp để suy luận mối quan hệ nhân vật chính xác.
+"""
 
+        # Bổ sung chỉ dẫn riêng từ người dùng để cá nhân hóa ngữ nghĩa dịch
+        if self.additional_instructions:
+            prompt += f"\nYÊU CẦU DỊCH THUẬT & XƯNG HÔ ĐẶC BIỆT TỪ NGƯỜI DÙNG:\n- {self.additional_instructions}\n"
+
+        prompt += f"""
 DỮ LIỆU ĐẦU VÀO (định dạng JSON chứa danh sách câu thoại kèm ID):
 {json.dumps(batch_payload, ensure_ascii=False, indent=2)}
 

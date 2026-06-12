@@ -6,6 +6,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const translationToneSelect = document.getElementById("translationTone");
     const batchSizeInput = document.getElementById("batchSize");
     const batchSizeValue = document.getElementById("batchSizeValue");
+    const additionalInstructionsInput = document.getElementById("additionalInstructions");
     
     const dropzone = document.getElementById("dropzone");
     const fileInput = document.getElementById("fileInput");
@@ -160,6 +161,7 @@ document.addEventListener("DOMContentLoaded", () => {
         srcLangSelect.disabled = true;
         translationToneSelect.disabled = true;
         batchSizeInput.disabled = true;
+        additionalInstructionsInput.disabled = true;
         btnLoader.style.display = "inline-block";
         btnDownload.classList.add("disabled");
         previewCard.style.display = "none";
@@ -178,6 +180,7 @@ document.addEventListener("DOMContentLoaded", () => {
         formData.append("src_lang", srcLangSelect.value);
         formData.append("tone", translationToneSelect.value);
         formData.append("batch_size_pages", batchSizeInput.value);
+        formData.append("additional_instructions", additionalInstructionsInput.value.trim());
 
         try {
             const response = await fetch("/api/upload", {
@@ -322,6 +325,7 @@ document.addEventListener("DOMContentLoaded", () => {
         srcLangSelect.disabled = false;
         translationToneSelect.disabled = false;
         batchSizeInput.disabled = false;
+        additionalInstructionsInput.disabled = false;
         btnLoader.style.display = "none";
     }
 

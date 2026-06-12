@@ -55,7 +55,8 @@ def run_job_in_background(
     api_key: str, 
     src_lang: str, 
     tone: str, 
-    batch_size_pages: int
+    batch_size_pages: int,
+    additional_instructions: str = ""
 ):
     """
     Thực thi quy trình dịch truyện tranh trong luồng chạy nền (background task) và cập nhật trạng thái phiên làm việc.
@@ -77,6 +78,7 @@ def run_job_in_background(
             src_lang=src_lang,
             tone=tone,
             batch_size_pages=batch_size_pages,
+            additional_instructions=additional_instructions,
             status_callback=status_callback
         )
         
@@ -126,7 +128,8 @@ async def upload_zip(
     api_key: str = Form(...),
     src_lang: str = Form("en"),
     tone: str = Form("tự nhiên"),
-    batch_size_pages: int = Form(10)
+    batch_size_pages: int = Form(10),
+    additional_instructions: str = Form("")
 ):
     """
     Tiếp nhận tệp ZIP truyện tranh tải lên từ Client, khởi tạo tiến trình xử lý ngầm và trả về ID phiên làm việc.
@@ -162,7 +165,8 @@ async def upload_zip(
         api_key,
         src_lang,
         tone,
-        batch_size_pages
+        batch_size_pages,
+        additional_instructions
     )
     
     return {"job_id": job_id}
