@@ -24,7 +24,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Create fonts directory and download a Vietnamese-supported font (Nunito Bold)
 RUN mkdir -p /workspace/fonts && \
-    wget -O /workspace/fonts/Nunito-Bold.ttf "https://github.com/google/fonts/raw/main/ofl/nunito/Nunito-Bold.ttf"
+    wget -O /workspace/fonts/Nunito-Bold.ttf "https://github.com/google/fonts/raw/main/ofl/nunito/Nunito%5Bwght%5D.ttf"
 
 # Copy the rest of the application
 COPY . .

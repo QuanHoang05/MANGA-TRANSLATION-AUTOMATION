@@ -10,7 +10,7 @@ if __name__ == "__main__":
         import urllib.request
         try:
             urllib.request.urlretrieve(
-                "https://github.com/google/fonts/raw/main/ofl/nunito/Nunito-Bold.ttf",
+                "https://github.com/google/fonts/raw/main/ofl/nunito/Nunito%5Bwght%5D.ttf",
                 font_path
             )
             print("Đã tải xong font chữ Nunito-Bold thành công.")

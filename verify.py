@@ -31,7 +31,7 @@ def run_local_verification():
         import urllib.request
         try:
             urllib.request.urlretrieve(
-                "https://github.com/google/fonts/raw/main/ofl/nunito/Nunito-Bold.ttf",
+                "https://github.com/google/fonts/raw/main/ofl/nunito/Nunito%5Bwght%5D.ttf",
                 font_path
             )
             print(" -> Tai font thanh cong.")
