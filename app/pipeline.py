@@ -29,9 +29,32 @@ def get_ocr(lang):
             print(f"Không thể kiểm tra GPU: {str(e)}. Mặc định chuyển sang chạy bằng CPU.")
             
         print(f"Đang khởi tạo đối tượng PaddleOCR cho ngôn ngữ: {lang} (Chạy trên GPU = {use_gpu})...")
-        # Khởi tạo mô hình OCR với cờ use_gpu tự động cấu hình
-        _ocr_instances[lang] = PaddleOCR(use_angle_cls=True, lang=lang, show_log=False, use_gpu=use_gpu)
+        
+        # Thử khởi tạo theo chuẩn PaddleOCR phiên bản mới (3.x+) trước
+        try:
+            device = "gpu" if use_gpu else "cpu"
+            # Lưu ý: PaddleOCR 3.x+ gặp lỗi với enable_mkldnn=True trên một số hệ thống CPU, đặt enable_mkldnn=False cho an toàn
+            _ocr_instances[lang] = PaddleOCR(
+                use_textline_orientation=True, 
+                lang=lang, 
+                device=device,
+                enable_mkldnn=False
+            )
+        except Exception as e:
+            print(f"Không thể khởi tạo bằng tham số PaddleOCR 3.x+ ({str(e)}). Thử bằng tham số PaddleOCR 2.x...")
+            try:
+                # Dự phòng cho PaddleOCR 2.x
+                _ocr_instances[lang] = PaddleOCR(
+                    use_angle_cls=True, 
+                    lang=lang, 
+                    show_log=False, 
+                    use_gpu=use_gpu
+                )
+            except Exception as e2:
+                print(f"Lỗi khi khởi tạo PaddleOCR 2.x: {str(e2)}")
+                raise e2
     return _ocr_instances[lang]
+
 
 
 class MangaPipeline:
@@ -119,8 +142,33 @@ class MangaPipeline:
             
             try:
                 # Gọi mô hình PaddleOCR
-                # Kết quả trả về có cấu trúc: [ [[box, (text, confidence)], ...] ]
-                result = ocr_model.ocr(img_path, cls=True)
+                try:
+                    # PaddleOCR 3.x+ không nhận đối số `cls` ở phương thức dự đoán
+                    raw_result = ocr_model.ocr(img_path)
+                except TypeError:
+                    # Dự phòng cho PaddleOCR 2.x
+                    raw_result = ocr_model.ocr(img_path, cls=True)
+                
+                # Chuẩn hóa định dạng kết quả giữa PaddleOCR 3.x+ và 2.x
+                result = raw_result
+                if raw_result and isinstance(raw_result, list) and len(raw_result) > 0 and isinstance(raw_result[0], dict) and 'rec_texts' in raw_result[0]:
+                    normalized = []
+                    for page_data in raw_result:
+                        page_items = []
+                        rec_texts = page_data.get('rec_texts', [])
+                        rec_scores = page_data.get('rec_scores', [])
+                        rec_polys = page_data.get('rec_polys', [])
+                        
+                        for i in range(len(rec_texts)):
+                            box = rec_polys[i] if i < len(rec_polys) else []
+                            if hasattr(box, 'tolist'):
+                                box = box.tolist()
+                            
+                            text = rec_texts[i]
+                            score = rec_scores[i] if i < len(rec_scores) else 1.0
+                            page_items.append([box, (text, score)])
+                        normalized.append(page_items)
+                    result = normalized
                 
                 img_ocr_items = []
                 if result and len(result) > 0 and result[0] is not None:
