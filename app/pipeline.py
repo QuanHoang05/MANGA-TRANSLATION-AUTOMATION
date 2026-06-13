@@ -320,7 +320,8 @@ class MangaPipeline:
 
     def find_bubble_contour_and_rect(self, cv2_img, bbox):
         """
-        Tìm Contour của bong bóng thoại chứa tâm của bbox và tính toán Hình chữ nhật nội tiếp lớn nhất.
+        Dò tìm ranh giới thực sự của bong bóng thoại bằng cv2.floodFill từ tâm bbox
+        để tránh tràn mặt nạ, sau đó tính Hình chữ nhật nội tiếp lớn nhất.
         """
         import cv2
         import numpy as np
@@ -344,73 +345,97 @@ class MangaPipeline:
         if crop_h <= 0 or crop_w <= 0:
             return False, None, [x0, y0, x2, y2], (255, 255, 255)
             
-        gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
+        # Tìm điểm bắt đầu (seedPoint) tại trung tâm của Bounding Box
+        seed_x = int((x0 + x2) / 2 - xmin)
+        seed_y = int((y0 + y2) / 2 - ymin)
         
-        # Lấy median màu sắc để nhận biết bong bóng sáng/tối
-        box_crop_gray = gray[max(0, y0 - ymin):min(crop_h, y2 - ymin), max(0, x0 - xmin):min(crop_w, x2 - xmin)]
-        median_val = np.median(box_crop_gray) if box_crop_gray.size > 0 else 255
+        # Đảm bảo seedPoint nằm trong khung ảnh crop
+        seed_x = max(0, min(crop_w - 1, seed_x))
+        seed_y = max(0, min(crop_h - 1, seed_y))
         
-        # Nhị phân hóa
-        if median_val > 127:
-            _, thresh = cv2.threshold(gray, 215, 255, cv2.THRESH_BINARY)
-        else:
-            _, thresh = cv2.threshold(gray, 60, 255, cv2.THRESH_BINARY_INV)
-            
-        # Tìm contours
-        contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        # Tránh việc chọn phải pixel chữ (màu tối), tìm pixel sáng nhất trong vùng lân cận
+        gray_crop = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
+        if gray_crop[seed_y, seed_x] < 80:
+            ny_min = max(0, seed_y - 15)
+            ny_max = min(crop_h, seed_y + 15)
+            nx_min = max(0, seed_x - 15)
+            nx_max = min(crop_w, seed_x + 15)
+            sub_gray = gray_crop[ny_min:ny_max, nx_min:nx_max]
+            if sub_gray.size > 0:
+                _, _, _, max_loc = cv2.minMaxLoc(sub_gray)
+                seed_x = nx_min + max_loc[0]
+                seed_y = ny_min + max_loc[1]
+                
+        # Khởi tạo mask cho floodFill (kích thước lớn hơn ảnh gốc 2 pixel ở mỗi chiều)
+        ff_mask = np.zeros((crop_h + 2, crop_w + 2), dtype=np.uint8)
         
-        # Tìm contour chứa tâm
-        cx = (x0 + x2) / 2 - xmin
-        cy = (y0 + y2) / 2 - ymin
+        # Chạy thuật toán floodFill loang màu khắt khe loDiff=(5,5,5) và upDiff=(5,5,5)
+        # để chống tràn màu ra các khu vực quần áo/bầu trời bên ngoài bong bóng thoại
+        cv2.floodFill(
+            image=crop,
+            mask=ff_mask,
+            seedPoint=(seed_x, seed_y),
+            newVal=(255, 255, 255),
+            loDiff=(5, 5, 5),
+            upDiff=(5, 5, 5),
+            flags=4 | cv2.FLOODFILL_MASK_ONLY | (255 << 8)
+        )
         
-        bubble_cnt = None
-        max_area = 0
+        # Lấy mask bong bóng thoại sau khi loang màu (loại bỏ lề 1px của floodFill)
+        bubble_mask = ff_mask[1:-1, 1:-1]
         
-        for cnt in contours:
-            dist = cv2.pointPolygonTest(cnt, (cx, cy), False)
-            if dist >= 0:
-                area = cv2.contourArea(cnt)
-                if area > max_area:
-                    max_area = area
-                    bubble_cnt = cnt
-                    
+        # Tính toán diện tích bong bóng thoại quét được
+        bubble_pixels = np.sum(bubble_mask == 255)
         min_area = box_w * box_h * 0.35
+        
         is_bubble = False
         best_rect = [x0, y0, x2, y2]
         best_contour_abs = None
         bg_color = (255, 255, 255)
         
-        if bubble_cnt is not None and max_area >= min_area:
-            is_bubble = True
-            best_contour_abs = bubble_cnt + np.array([xmin, ymin])
-            
-            # Tạo mask
-            mask_cnt = np.zeros_like(thresh)
-            cv2.drawContours(mask_cnt, [bubble_cnt], -1, 255, -1)
-            
-            # Xác định màu nền
-            bg_pixels = crop[mask_cnt == 255]
-            if bg_pixels.size > 0:
-                median_bgr = np.median(bg_pixels, axis=0)
-                bg_color = (int(median_bgr[0]), int(median_bgr[1]), int(median_bgr[2]))
-                
-            # Áp dụng xói mòn để padding cách viền
-            k_size = max(3, int(min(box_w, box_h) * 0.08))
-            if k_size % 2 == 0:
-                k_size += 1
-            kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k_size, k_size))
-            eroded_mask = cv2.erode(mask_cnt, kernel, iterations=1)
-            
-            # Tìm Max Inscribed Rectangle
-            inscribed = self.max_inscribed_rectangle(eroded_mask > 0)
-            if inscribed[2] > inscribed[0] and inscribed[3] > inscribed[1]:
-                best_rect = [
-                    inscribed[0] + xmin,
-                    inscribed[1] + ymin,
-                    inscribed[2] + xmin,
-                    inscribed[3] + ymin
-                ]
-                
+        if bubble_pixels >= min_area:
+            # Tìm contours từ mask của floodFill để trích xuất đa giác bong bóng thoại
+            contours, _ = cv2.findContours(bubble_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            if contours:
+                # Tìm contour lớn nhất chứa điểm seedPoint
+                cx_crop = seed_x
+                cy_crop = seed_y
+                bubble_cnt = None
+                max_cnt_area = 0
+                for cnt in contours:
+                    if cv2.pointPolygonTest(cnt, (cx_crop, cy_crop), False) >= 0:
+                        cnt_area = cv2.contourArea(cnt)
+                        if cnt_area > max_cnt_area:
+                            max_cnt_area = cnt_area
+                            bubble_cnt = cnt
+                            
+                if bubble_cnt is not None:
+                    is_bubble = True
+                    best_contour_abs = bubble_cnt + np.array([xmin, ymin])
+                    
+                    # Xác định màu nền trung vị (median BGR color) của bong bóng thoại
+                    bg_pixels = crop[bubble_mask == 255]
+                    if bg_pixels.size > 0:
+                        median_bgr = np.median(bg_pixels, axis=0)
+                        bg_color = (int(median_bgr[0]), int(median_bgr[1]), int(median_bgr[2]))
+                        
+                    # Áp dụng xói mòn (erosion) trên mặt nạ để chữ không chạm sát viền đen bong bóng
+                    k_size = max(3, int(min(box_w, box_h) * 0.08))
+                    if k_size % 2 == 0:
+                        k_size += 1
+                    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k_size, k_size))
+                    eroded_mask = cv2.erode(bubble_mask, kernel, iterations=1)
+                    
+                    # Chạy thuật toán quy hoạch động tìm Hình chữ nhật nội tiếp lớn nhất
+                    inscribed = self.max_inscribed_rectangle(eroded_mask > 0)
+                    if inscribed[2] > inscribed[0] and inscribed[3] > inscribed[1]:
+                        best_rect = [
+                            inscribed[0] + xmin,
+                            inscribed[1] + ymin,
+                            inscribed[2] + xmin,
+                            inscribed[3] + ymin
+                        ]
+                        
         return is_bubble, best_contour_abs, best_rect, bg_color
 
     def run_pipeline(self, zip_path: str, output_zip_path: str, temp_dir: str):
@@ -858,30 +883,26 @@ Hãy dịch toàn bộ danh sách trên và trả về kết quả dưới đị
 
     def wrap_text(self, text: str, font, max_width: float) -> list:
         """
-        Tự động ngắt văn bản thành các dòng nhỏ không vượt quá chiều rộng max_width.
+        Tự động ngắt văn bản thành các dòng nhỏ sử dụng thư viện textwrap.
         """
-        words = text.split()
-        lines = []
-        current_line = []
+        import textwrap
         
-        for word in words:
-            test_line = " ".join(current_line + [word])
-            # Sử dụng getbbox để tương thích tốt với Pillow phiên bản mới (PIL 10+)
-            bbox = font.getbbox(test_line)
-            width = bbox[2] - bbox[0]
+        # Ước lượng độ rộng trung bình của một ký tự để tính width cho textwrap
+        sample = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+        try:
+            bbox = font.getbbox(sample)
+            avg_char_w = (bbox[2] - bbox[0]) / len(sample)
+        except Exception:
+            avg_char_w = 10.0
             
-            if width <= max_width:
-                current_line.append(word)
-            else:
-                if current_line:
-                    lines.append(" ".join(current_line))
-                    current_line = [word]
-                else:
-                    # Nếu một từ đơn quá rộng so với khung thoại, ép nó xuống dòng mới đơn độc
-                    lines.append(word)
-        if current_line:
-            lines.append(" ".join(current_line))
-        return lines
+        if avg_char_w <= 0:
+            avg_char_w = 10.0
+            
+        chars_per_line = int(max_width / avg_char_w)
+        if chars_per_line < 1:
+            chars_per_line = 1
+            
+        return textwrap.wrap(text, width=chars_per_line)
 
     def draw_text_in_box(self, draw: ImageDraw.Draw, text: str, bbox: list, font_path: str, is_sfx: bool = False):
         """
@@ -896,12 +917,11 @@ Hãy dịch toàn bộ danh sách trên và trả về kết quả dưới đị
         optimal_lines = []
         optimal_line_heights = []
         
-        # Thử nghiệm giảm kích thước font chữ từ 28 xuống 10 để chọn kích cỡ vừa vặn nhất
-        for font_size in range(28, 9, -2):
+        # Thử nghiệm giảm kích thước font chữ từ 28 xuống 14 (Clamp tối đa 28, tối thiểu 14)
+        for font_size in range(28, 13, -2):
             try:
-                # Tải font chữ TrueType
                 if font_path == "Arial":
-                    font = ImageFont.load_default() # Font dự phòng mặc định
+                    font = ImageFont.load_default()
                 else:
                     font = ImageFont.truetype(font_path, font_size)
             except Exception:
@@ -929,13 +949,13 @@ Hãy dịch toàn bộ danh sách trên và trả về kết quả dưới đị
                 optimal_line_heights = line_heights
                 break
                 
-        # Nếu không có kích cỡ nào vừa khít, ép buộc dùng size chữ tối thiểu là 10
+        # Nếu không có kích cỡ nào vừa khít trong khoảng [14, 28], ép cứng kích thước font tối thiểu là 14 (Clamp)
         if optimal_font is None:
             try:
                 if font_path == "Arial":
                     optimal_font = ImageFont.load_default()
                 else:
-                    optimal_font = ImageFont.truetype(font_path, 10)
+                    optimal_font = ImageFont.truetype(font_path, 14)
             except Exception:
                 optimal_font = ImageFont.load_default()
             optimal_lines = self.wrap_text(text, optimal_font, box_w)
