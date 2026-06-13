@@ -182,8 +182,30 @@
                     </div>
                 </div>
 
+                <!-- Data Inspection Card -->
+                <div class="glass-card inspect-card" id="inspectCard" style="margin-top: 20px;">
+                    <h2>📁 Dữ Liệu OCR & Bản Dịch</h2>
+                    <div class="row-inputs" style="display: flex; gap: 15px; margin-top: 15px;">
+                        <div class="input-group half" style="flex: 1; display: flex; flex-direction: column;">
+                            <label for="ocrResultsBox" style="margin-bottom: 8px; font-weight: 500; font-size: 14px;">1. Kết quả quét OCR (JSON)</label>
+                            <textarea id="ocrResultsBox" rows="8" readonly placeholder="Đang chờ quét chữ (OCR)..." style="background: rgba(10, 10, 10, 0.4); color: #00ffcc; border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 8px; font-family: monospace; font-size: 12px; padding: 10px; resize: vertical; flex-grow: 1; min-height: 150px;"></textarea>
+                            <button type="button" id="btnDownloadOcr" class="btn-secondary small" disabled style="width: 100%; margin-top: 8px; padding: 8px 12px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.15); background: rgba(255, 255, 255, 0.08); color: #fff; cursor: pointer; font-size: 13px; font-weight: 500; transition: all 0.3s ease; display: flex; align-items: center; justify-content: center; gap: 5px;">📥 Tải JSON OCR</button>
+                        </div>
+                        
+                        <div class="input-group half" style="flex: 1; display: flex; flex-direction: column;">
+                            <label for="customTranslationBox" style="margin-bottom: 8px; font-weight: 500; font-size: 14px;">2. Bản dịch JSON (Custom hoặc nhận từ Gemini)</label>
+                            <textarea id="customTranslationBox" rows="8" placeholder='Nhập bản dịch JSON tại đây nếu tự dịch thủ công:
+{
+  "001-O0": "Bản dịch câu 1",
+  "001-O1": "Bản dịch câu 2"
+}' style="background: rgba(10, 10, 10, 0.4); color: #ffdd67; border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 8px; font-family: monospace; font-size: 12px; padding: 10px; resize: vertical; flex-grow: 1; min-height: 150px;"></textarea>
+                            <button type="button" id="btnDownloadTranslation" class="btn-secondary small" disabled style="width: 100%; margin-top: 8px; padding: 8px 12px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.15); background: rgba(255, 255, 255, 0.08); color: #fff; cursor: pointer; font-size: 13px; font-weight: 500; transition: all 0.3s ease; display: flex; align-items: center; justify-content: center; gap: 5px;">📥 Tải JSON Bản Dịch</button>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Preview Card (Visible after complete) -->
-                <div class="glass-card preview-card" id="previewCard" style="display: none;">
+                <div class="glass-card preview-card" id="previewCard" style="display: none; margin-top: 20px;">
                     <div class="preview-header">
                         <h2><i class="icon-eye"></i> So Sánh Kết Quả Trước & Sau</h2>
                         <div class="page-controls">
@@ -219,6 +241,6 @@
     </div>
     
     <!-- JS Logic -->
-    <script src="/static/js/app.js"></script>
+    <script src="/static/js/app.js?v=2"></script>
 </body>
 </html>

@@ -32,6 +32,12 @@ document.addEventListener("DOMContentLoaded", () => {
     const btnPrevPage = document.getElementById("btnPrevPage");
     const btnNextPage = document.getElementById("btnNextPage");
     
+    // Tham chiếu các ô dữ liệu OCR và Bản dịch tùy chỉnh mới
+    const ocrResultsBox = document.getElementById("ocrResultsBox");
+    const customTranslationBox = document.getElementById("customTranslationBox");
+    const btnDownloadOcr = document.getElementById("btnDownloadOcr");
+    const btnDownloadTranslation = document.getElementById("btnDownloadTranslation");
+    
     // Biến quản lý trạng thái của ứng dụng (chứa 1 file ZIP hoặc nhiều file ảnh lẻ)
     let selectedFiles = [];
     let currentJobId = null;
@@ -170,14 +176,17 @@ document.addEventListener("DOMContentLoaded", () => {
     // 5. Lắng nghe sự kiện kích hoạt chạy quy trình dịch tự động
     btnStartPipeline.addEventListener("click", async () => {
         const apiKey = apiKeyInput.value.trim();
-        if (!apiKey) {
-            alert("Vui lòng điền Gemini API Key để dịch thuật!");
-            apiKeyInput.focus();
-            return;
+        const customTranslation = customTranslationBox.value.trim();
+        
+        if (!apiKey && !customTranslation) {
+            const confirmOcrOnly = confirm("Bạn chưa nhập Gemini API Key và cũng không có Bản dịch JSON.\n\nBạn có muốn chạy hệ thống ở chế độ 'Chỉ quét OCR' (không dịch) để lấy danh sách ID thoại không?");
+            if (!confirmOcrOnly) return;
         }
 
         // Lưu trữ khóa API Key vào bộ nhớ LocalStorage của trình duyệt
-        localStorage.setItem("manga_gemini_api_key", apiKey);
+        if (apiKey) {
+            localStorage.setItem("manga_gemini_api_key", apiKey);
+        }
 
         // Vô hiệu hóa tạm thời các nút nhập để ngăn chặn gửi nhiều yêu cầu song song gây xung đột
         btnStartPipeline.disabled = true;
@@ -187,9 +196,15 @@ document.addEventListener("DOMContentLoaded", () => {
         translationToneSelect.disabled = true;
         batchSizeInput.disabled = true;
         additionalInstructionsInput.disabled = true;
+        customTranslationBox.disabled = true;
         btnLoader.style.display = "inline-block";
         btnDownload.classList.add("disabled");
         previewCard.style.display = "none";
+        
+        // Cài đặt lại trạng thái các ô xem trước dữ liệu JSON
+        ocrResultsBox.value = "";
+        btnDownloadOcr.disabled = true;
+        btnDownloadTranslation.disabled = true;
         
         // Cài đặt lại trạng thái các bước tiến trình hiển thị
         document.querySelectorAll(".step-item").forEach(item => {
@@ -208,6 +223,7 @@ document.addEventListener("DOMContentLoaded", () => {
         formData.append("tone", translationToneSelect.value);
         formData.append("batch_size_pages", batchSizeInput.value);
         formData.append("additional_instructions", additionalInstructionsInput.value.trim());
+        formData.append("custom_translation", customTranslation);
 
         try {
             const response = await fetch("/api/upload", {
@@ -260,6 +276,18 @@ document.addEventListener("DOMContentLoaded", () => {
                 const isErr = data.log.includes("LỖI") || data.log.includes("Error") || data.log.includes("fail");
                 const isSystem = data.log.includes("BƯỚC") || data.log.includes("HỆ THỐNG");
                 addLogLine(data.log, isErr ? "error-msg" : (isSystem ? "system-msg" : ""));
+            }
+
+            // Nhận và cập nhật dữ liệu OCR JSON về giao diện
+            if (data.ocr_results) {
+                ocrResultsBox.value = JSON.stringify(data.ocr_results, null, 2);
+                btnDownloadOcr.disabled = false;
+            }
+
+            // Nhận và cập nhật dữ liệu Bản dịch JSON về giao diện
+            if (data.translated_results) {
+                customTranslationBox.value = JSON.stringify(data.translated_results, null, 2);
+                btnDownloadTranslation.disabled = false;
             }
 
             // Phân tích trạng thái tiến trình để làm sáng Step Tracker
@@ -353,6 +381,7 @@ document.addEventListener("DOMContentLoaded", () => {
         translationToneSelect.disabled = false;
         batchSizeInput.disabled = false;
         additionalInstructionsInput.disabled = false;
+        customTranslationBox.disabled = false;
         btnLoader.style.display = "none";
     }
 
@@ -390,4 +419,30 @@ document.addEventListener("DOMContentLoaded", () => {
             updatePageUrls(currentJobId);
         }
     });
+
+    // 7. Thiết lập tính năng tải xuống tệp JSON OCR
+    btnDownloadOcr.addEventListener("click", () => {
+        const ocrText = ocrResultsBox.value;
+        if (!ocrText) return;
+        downloadJsonFile(ocrText, `ocr_results_${currentJobId || "export"}.json`);
+    });
+
+    // 8. Thiết lập tính năng tải xuống tệp JSON Bản dịch
+    btnDownloadTranslation.addEventListener("click", () => {
+        const transText = customTranslationBox.value;
+        if (!transText) return;
+        downloadJsonFile(transText, `translation_results_${currentJobId || "export"}.json`);
+    });
+
+    function downloadJsonFile(content, fileName) {
+        const blob = new Blob([content], { type: "application/json;charset=utf-8;" });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.setAttribute("href", url);
+        link.setAttribute("download", fileName);
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    }
 });

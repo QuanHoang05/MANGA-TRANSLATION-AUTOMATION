@@ -7,6 +7,7 @@ import math
 import numpy as np
 import cv2
 from PIL import Image, ImageDraw, ImageFont
+Image.MAX_IMAGE_PIXELS = None
 import google.generativeai as genai
 
 # Cache các đối tượng OCR toàn cục để tránh việc tải lại mô hình trong mỗi yêu cầu
@@ -56,9 +57,8 @@ def get_ocr(lang):
     return _ocr_instances[lang]
 
 
-
 class MangaPipeline:
-    def __init__(self, api_key: str, src_lang: str = "en", tone: str = "tự nhiên", batch_size_pages: int = 10, additional_instructions: str = "", status_callback=None):
+    def __init__(self, api_key: str, src_lang: str = "en", tone: str = "tự nhiên", batch_size_pages: int = 10, additional_instructions: str = "", status_callback=None, custom_translation: str = ""):
         self.api_key = api_key
         self.src_lang = src_lang
         self.tone = tone
@@ -70,11 +70,197 @@ class MangaPipeline:
         if api_key:
             genai.configure(api_key=api_key)
             
-    def log(self, message: str, percent: float):
+        # Phân tích cú pháp bản dịch tùy chỉnh do người dùng nhập vào (nếu có)
+        self.custom_translation_map = {}
+        if custom_translation:
+            try:
+                data = json.loads(custom_translation)
+                if isinstance(data, dict):
+                    if "translations" in data and isinstance(data["translations"], list):
+                        for item in data["translations"]:
+                            if isinstance(item, dict) and "id" in item and "translated_text" in item:
+                                self.custom_translation_map[item["id"]] = item["translated_text"]
+                    else:
+                        self.custom_translation_map = data
+                elif isinstance(data, list):
+                    for item in data:
+                        if isinstance(item, dict) and "id" in item and "translated_text" in item:
+                            self.custom_translation_map[item["id"]] = item["translated_text"]
+            except Exception as pe:
+                print(f"Cảnh báo: Không thể phân tích cú pháp custom_translation JSON: {pe}")
+            
+    def log(self, message: str, percent: float, event_type: str = None, data = None):
         if self.status_callback:
-            self.status_callback(message, percent)
+            try:
+                self.status_callback(message, percent, event_type, data)
+            except TypeError:
+                try:
+                    self.status_callback(message, percent)
+                except Exception:
+                    pass
         else:
             print(f"[{percent:.1f}%] {message}")
+
+    def group_ocr_boxes(self, ocr_items: list, lang: str) -> list:
+        """
+        Gom nhóm các dòng chữ quét được từ OCR thuộc cùng một ô thoại (speech bubble)
+        để dịch trọn vẹn câu và vẽ chữ cân đối, tránh lỗi đè chữ.
+        """
+        if not ocr_items:
+            return []
+            
+        n = len(ocr_items)
+        parent = list(range(n))
+        
+        def find(i):
+            if parent[i] == i:
+                return i
+            parent[i] = find(parent[i])
+            return parent[i]
+            
+        def union(i, j):
+            root_i = find(i)
+            root_j = find(j)
+            if root_i != root_j:
+                parent[root_i] = root_j
+                
+        # Duyệt và liên kết các hộp thoại gần nhau
+        for i in range(n):
+            for j in range(i + 1, n):
+                boxA = ocr_items[i]["bbox"]
+                boxB = ocr_items[j]["bbox"]
+                
+                x0_A, y0_A, x2_A, y2_A = boxA
+                x0_B, y0_B, x2_B, y2_B = boxB
+                
+                h_A = y2_A - y0_A
+                h_B = y2_B - y0_B
+                h_avg = (h_A + h_B) / 2.0
+                
+                # Khoảng cách dọc giữa hai ô chữ
+                v_gap = max(0, y0_B - y2_A) if y0_B >= y2_A else max(0, y0_A - y2_B)
+                # Khoảng cách ngang (độ chồng chéo ngang)
+                overlap_x = min(x2_A, x2_B) - max(x0_A, x0_B)
+                
+                # Điều kiện gom nhóm:
+                # 1. Khoảng cách dọc nhỏ (dưới 1.5 lần chiều cao chữ trung bình)
+                # 2. Có chồng chéo chiều ngang hoặc khoảng cách ngang rất bé (dưới 0.8 lần chiều cao chữ)
+                is_close_v = v_gap <= h_avg * 1.5
+                is_overlapping_h = overlap_x > - (h_avg * 0.8)
+                
+                if is_close_v and is_overlapping_h:
+                    union(i, j)
+                    
+        # Nhóm các mục theo gốc liên kết
+        groups = {}
+        for i in range(n):
+            root = find(i)
+            if root not in groups:
+                groups[root] = []
+            groups[root].append(ocr_items[i])
+            
+        merged_items = []
+        for g_idx, group in enumerate(groups.values()):
+            # Sắp xếp các dòng chữ trong nhóm từ trên xuống dưới
+            group.sort(key=lambda item: item["bbox"][1])
+            
+            # Ghép chuỗi văn bản gốc
+            texts = [item["original_text"] for item in group]
+            if lang in ["ch", "japan", "ko"]:
+                combined_text = "".join(texts)
+            else:
+                combined_text = " ".join(texts)
+                
+            # Tính toán hộp bao (bbox) gộp cho cả nhóm
+            x0_comb = min(item["bbox"][0] for item in group)
+            y0_comb = min(item["bbox"][1] for item in group)
+            x2_comb = max(item["bbox"][2] for item in group)
+            y2_comb = max(item["bbox"][3] for item in group)
+            
+            # Gộp danh sách đa giác chữ (polygons) để phục vụ xóa chữ
+            combined_box_points = []
+            for item in group:
+                combined_box_points.append(item["box_points"])
+                
+            first_id = group[0]["id"]
+            img_prefix = first_id.split("-")[0]
+            merged_id = f"{img_prefix}-B{g_idx}"
+            
+            merged_items.append({
+                "id": merged_id,
+                "original_text": combined_text,
+                "box_points": combined_box_points,
+                "bbox": [x0_comb, y0_comb, x2_comb, y2_comb],
+                "confidence": sum(item["confidence"] for item in group) / len(group)
+            })
+            
+        # Sắp xếp lại danh sách các bong bóng thoại gộp theo thứ tự xuất hiện trên trang ảnh
+        merged_items.sort(key=lambda item: item["bbox"][1])
+        return merged_items
+
+    def slice_large_image(self, img_path: str, output_folder: str, prefix: str, max_height: int = 10000) -> list[str]:
+        """
+        Tự động phân mảnh dọc ảnh siêu dài thành các phần nhỏ để tránh crash OpenCV/PaddleOCR
+        và giảm thiểu nguy cơ quá tải bộ nhớ (OOM).
+        """
+        from PIL import Image
+        import numpy as np
+        import cv2
+        
+        img = Image.open(img_path)
+        w, h = img.size
+        
+        if h <= max_height:
+            # Không cần phân mảnh, chỉ cần lưu file
+            ext = os.path.splitext(img_path)[1].lower()
+            new_path = os.path.join(output_folder, f"{prefix}{ext}")
+            img.save(new_path)
+            return [new_path]
+            
+        self.log(f"Phát hiện ảnh siêu dài ({w}x{h}). Bắt đầu phân mảnh ảnh dọc...", 7.0)
+        
+        # Chuyển sang ảnh grayscale để tính toán độ phân tán (variance) hàng loạt nhanh hơn
+        img_np = np.array(img.convert("RGB"))
+        gray_img = cv2.cvtColor(img_np, cv2.COLOR_RGB2GRAY)
+        
+        slice_paths = []
+        y = 0
+        part_idx = 1
+        
+        target_max = max_height
+        target_min = int(max_height * 0.75) # ví dụ: 7500px
+        
+        while y < h:
+            if h - y <= target_max:
+                # Phân mảnh cuối cùng
+                slice_y = h
+            else:
+                # Tìm điểm cắt tốt nhất trong khoảng [y + target_min, y + target_max]
+                search_start = y + target_min
+                search_end = min(y + target_max, h)
+                
+                slice_gray = gray_img[search_start:search_end]
+                # Tính phương sai hàng ngang (variance) của từng dòng để tìm khoảng trắng phân tách các khung truyện (panels)
+                row_variances = np.var(slice_gray, axis=1)
+                
+                best_local_y = np.argmin(row_variances)
+                slice_y = search_start + best_local_y
+                
+            # Cắt ảnh
+            slice_img = img.crop((0, y, w, slice_y))
+            
+            ext = os.path.splitext(img_path)[1].lower()
+            part_name = f"{prefix}_part{part_idx:02d}{ext}"
+            part_path = os.path.join(output_folder, part_name)
+            slice_img.save(part_path)
+            
+            slice_paths.append(part_path)
+            self.log(f"Đã cắt phân mảnh {part_idx}: dòng {y} đến {slice_y} (Cao: {slice_y - y}px)", 7.0)
+            
+            y = slice_y
+            part_idx += 1
+            
+        return slice_paths
 
     def run_pipeline(self, zip_path: str, output_zip_path: str, temp_dir: str):
         """
@@ -119,13 +305,14 @@ class MangaPipeline:
         raw_images.sort(key=natural_sort_key)
         
         # Chuẩn hóa tên ảnh về chuỗi số tăng dần liên tục (001, 002...) để tránh các ký tự tiếng Việt, khoảng trống gây lỗi dịch
+        # Tiến hành phân mảnh (slice) dọc nếu ảnh siêu dài (chiều cao > 10000px) tránh crash OpenCV/PaddleOCR
         images = []
-        for i, raw_img_path in enumerate(raw_images):
-            ext = os.path.splitext(raw_img_path)[1].lower()
-            new_name = f"{i+1:03d}{ext}"  # Tên chuẩn theo dạng 001.png, 002.jpg...
-            new_path = os.path.join(input_folder, new_name)
-            shutil.copy(raw_img_path, new_path)
-            images.append(new_path)
+        part_counter = 1
+        for raw_img_path in raw_images:
+            prefix = f"{part_counter:03d}"
+            sliced_paths = self.slice_large_image(raw_img_path, input_folder, prefix)
+            images.extend(sliced_paths)
+            part_counter += len(sliced_paths)
             
         self.log(f"Đã chuẩn hóa và tìm thấy {len(images)} ảnh truyện tranh. Bắt đầu OCR...", 10.0)
         
@@ -191,12 +378,23 @@ class MangaPipeline:
                             "confidence": float(conf)
                         })
                 
-                ocr_data[img_path] = img_ocr_items
+                grouped_items = self.group_ocr_boxes(img_ocr_items, self.src_lang)
+                ocr_data[img_path] = grouped_items
                 
             except Exception as e:
                 self.log(f"Lỗi khi quét OCR ảnh {img_name}: {str(e)}", 15.0 + (idx / total_images) * 25.0)
                 ocr_data[img_path] = []
                 
+        # Trích xuất dữ liệu OCR thô dạng danh sách để hiển thị trên giao diện và tải về
+        ocr_results_list = []
+        for img_path in images:
+            for item in ocr_data.get(img_path, []):
+                ocr_results_list.append({
+                    "id": item["id"],
+                    "text": item["original_text"]
+                })
+        self.log("Đã hoàn thành quét OCR toàn bộ các trang.", 45.0, event_type="ocr_completed", data=ocr_results_list)
+        
         # Bước 3: Dịch thuật ngữ cảnh thông qua API Gemini (Context-Aware Translation)
         self.log("BƯỚC 3: Dịch thuật gộp qua API Gemini Studio...", 45.0)
         
@@ -207,40 +405,59 @@ class MangaPipeline:
             
         translated_texts = {} # Chứa kết quả ánh xạ {id: văn_bản_đã_dịch}
         
-        if all_ocr_items:
-            # Gom các ảnh thành từng cụm trang dựa trên kích thước `batch_size_pages`
-            page_clusters = []
-            current_cluster = []
+        if self.custom_translation_map:
+            self.log("HỆ THỐNG: Sử dụng bản dịch JSON tùy chỉnh do người dùng cung cấp.", 48.0)
+            # Điền các bản dịch từ custom map
+            for item in all_ocr_items:
+                item_id = item["id"]
+                if item_id in self.custom_translation_map:
+                    translated_texts[item_id] = self.custom_translation_map[item_id]
             
-            for i, img_path in enumerate(images):
-                current_cluster.append(img_path)
-                if len(current_cluster) >= self.batch_size_pages or i == len(images) - 1:
-                    page_clusters.append(current_cluster)
-                    current_cluster = []
+            # Gửi sự kiện cập nhật bản dịch về client
+            self.log("Đã áp dụng bản dịch tùy chỉnh.", 70.0, event_type="translation_completed", data=translated_texts)
             
-            total_clusters = len(page_clusters)
-            self.log(f"Tổng cộng có {len(all_ocr_items)} ô thoại. Chia làm {total_clusters} nhóm trang để gửi Gemini...", 48.0)
-            
-            for c_idx, cluster in enumerate(page_clusters):
-                self.log(f"Đang gửi nhóm trang {c_idx+1}/{total_clusters} lên Gemini...", 48.0 + (c_idx / total_clusters) * 22.0)
+        elif all_ocr_items:
+            if not self.api_key:
+                self.log("HỆ THỐNG CẢNH BÁO: Không có API Key và không có Bản dịch tùy chỉnh. Bỏ qua bước dịch thuật.", 70.0)
+                self.log("Bỏ qua dịch thuật.", 70.0, event_type="translation_completed", data={})
+            else:
+                # Gom các ảnh thành từng cụm trang dựa trên kích thước `batch_size_pages`
+                page_clusters = []
+                current_cluster = []
                 
-                # Thu thập tất cả các ô thoại trong cụm trang hiện tại
-                cluster_items = []
-                for img_path in cluster:
-                    for item in ocr_data[img_path]:
-                        cluster_items.append({
-                            "id": item["id"],
-                            "text": item["original_text"]
-                        })
+                for i, img_path in enumerate(images):
+                    current_cluster.append(img_path)
+                    if len(current_cluster) >= self.batch_size_pages or i == len(images) - 1:
+                        page_clusters.append(current_cluster)
+                        current_cluster = []
                 
-                if not cluster_items:
-                    continue  # Không có chữ nào cần dịch trong cụm này
+                total_clusters = len(page_clusters)
+                self.log(f"Tổng cộng có {len(all_ocr_items)} ô thoại. Chia làm {total_clusters} nhóm trang để gửi Gemini...", 48.0)
+                
+                for c_idx, cluster in enumerate(page_clusters):
+                    self.log(f"Đang gửi nhóm trang {c_idx+1}/{total_clusters} lên Gemini...", 48.0 + (c_idx / total_clusters) * 22.0)
                     
-                # Gửi cụm thoại lên Gemini API để xử lý dịch gộp ngữ cảnh
-                translated_batch = self.translate_batch(cluster_items)
-                translated_texts.update(translated_batch)
+                    # Thu thập tất cả các ô thoại trong cụm trang hiện tại
+                    cluster_items = []
+                    for img_path in cluster:
+                        for item in ocr_data[img_path]:
+                            cluster_items.append({
+                                "id": item["id"],
+                                "text": item["original_text"]
+                            })
+                    
+                    if not cluster_items:
+                        continue  # Không có chữ nào cần dịch trong cụm này
+                        
+                    # Gửi cụm thoại lên Gemini API để xử lý dịch gộp ngữ cảnh
+                    translated_batch = self.translate_batch(cluster_items)
+                    translated_texts.update(translated_batch)
+                
+                # Gửi sự kiện cập nhật bản dịch về client
+                self.log("Đã nhận bản dịch từ Gemini.", 70.0, event_type="translation_completed", data=translated_texts)
         else:
             self.log("Không phát hiện văn bản nào cần dịch.", 70.0)
+            self.log("Không có văn bản dịch.", 70.0, event_type="translation_completed", data={})
             
         # Bước 4: Xử lý đồ họa & Ráp chữ tự động (Inpainting & Typesetting)
         self.log("BƯỚC 4: Xóa chữ cũ (Inpainting) & Ráp chữ Việt mới (Typesetting)...", 70.0)
@@ -271,20 +488,28 @@ class MangaPipeline:
                     # 1. Xóa văn bản gốc bằng công nghệ Inpainting
                     # Tạo ảnh mặt nạ nhị phân (Binary Mask)
                     mask = np.zeros(cv2_img.shape[:2], dtype=np.uint8)
+                    has_changes = False
                     for item in items:
-                        pts = np.array(item["box_points"], dtype=np.int32)
-                        cv2.fillPoly(mask, [pts], 255)
+                        t_text = translated_texts.get(item["id"])
+                        if t_text and t_text != item["original_text"]:
+                            for poly in item["box_points"]:
+                                pts = np.array(poly, dtype=np.int32)
+                                cv2.fillPoly(mask, [pts], 255)
+                            has_changes = True
+                            
+                    if has_changes:
+                        # Giãn nở nhẹ mặt nạ để bao phủ triệt để bóng chữ cũ
+                        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
+                        mask = cv2.dilate(mask, kernel, iterations=1)
                         
-                    # Giãn nở nhẹ mặt nạ để bao phủ triệt để bóng chữ cũ
-                    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
-                    mask = cv2.dilate(mask, kernel, iterations=1)
-                    
-                    # Tiến hành phục hồi ảnh (tẩy chữ)
-                    inpainted_cv2 = cv2.inpaint(cv2_img, mask, inpaintRadius=5, flags=cv2.INPAINT_TELEA)
-                    
-                    # Chuyển đổi ngược về Pillow Image để vẽ chữ chất lượng cao
-                    inpainted_rgb = cv2.cvtColor(inpainted_cv2, cv2.COLOR_BGR2RGB)
-                    pil_img = Image.fromarray(inpainted_rgb)
+                        # Tiến hành phục hồi ảnh (tẩy chữ)
+                        inpainted_cv2 = cv2.inpaint(cv2_img, mask, inpaintRadius=5, flags=cv2.INPAINT_TELEA)
+                        
+                        # Chuyển đổi ngược về Pillow Image để vẽ chữ chất lượng cao
+                        inpainted_rgb = cv2.cvtColor(inpainted_cv2, cv2.COLOR_BGR2RGB)
+                        pil_img = Image.fromarray(inpainted_rgb)
+                    else:
+                        pil_img = Image.open(img_path).convert("RGB")
                 else:
                     # Nếu trang không chứa văn bản, chỉ cần mở trực tiếp bằng Pillow
                     pil_img = Image.open(img_path).convert("RGB")
@@ -293,9 +518,10 @@ class MangaPipeline:
                 draw = ImageDraw.Draw(pil_img)
                 
                 for item in items:
-                    t_text = translated_texts.get(item["id"], item["original_text"])
-                    # Tiến hành ngắt câu và vẽ chữ cân đối vào hộp thoại
-                    self.draw_text_in_box(draw, t_text, item["bbox"], font_path)
+                    t_text = translated_texts.get(item["id"])
+                    if t_text and t_text != item["original_text"]:
+                        # Tiến hành ngắt câu và vẽ chữ cân đối vào hộp thoại
+                        self.draw_text_in_box(draw, t_text, item["bbox"], font_path)
                     
                 # Lưu ảnh kết quả vào thư mục đầu ra
                 output_img_path = os.path.join(output_folder, img_name)
@@ -377,18 +603,56 @@ Hãy dịch toàn bộ danh sách trên và trả về kết quả dưới đị
             "required": ["translations"]
         }
         
+        # Thử liệt kê mô hình khả dụng trước qua API key để tự phát hiện tên model chính xác
+        model_names_to_try = []
         try:
-            model = genai.GenerativeModel(
-                model_name="gemini-1.5-flash",
-                generation_config={
-                    "response_mime_type": "application/json",
-                    "response_schema": schema
-                }
-            )
+            supported_models = list(genai.list_models())
+            flash_models = [
+                m.name.replace("models/", "") 
+                for m in supported_models 
+                if "flash" in m.name.lower() and "generatecontent" in "".join(m.supported_generation_methods).lower()
+            ]
+            if flash_models:
+                flash_models.sort(reverse=True)
+                model_names_to_try.extend(flash_models)
+        except Exception as le:
+            print(f"Cảnh báo: Không thể liệt kê danh sách model ({le})")
             
-            response = model.generate_content(prompt)
-            response_data = json.loads(response.text)
-            
+        # Thêm các tên model dự phòng tiêu chuẩn
+        for fallback in ["gemini-1.5-flash-latest", "gemini-1.5-flash", "gemini-2.0-flash", "gemini-2.5-flash"]:
+            if fallback not in model_names_to_try:
+                model_names_to_try.append(fallback)
+                
+        response_data = None
+        last_err = None
+        
+        for m_name in model_names_to_try:
+            try:
+                print(f"Đang thử dịch bằng model: {m_name}...")
+                model = genai.GenerativeModel(
+                    model_name=m_name,
+                    generation_config={
+                        "response_mime_type": "application/json",
+                        "response_schema": schema
+                    }
+                )
+                response = model.generate_content(prompt)
+                response_data = json.loads(response.text)
+                print(f"Dịch thành công bằng model: {m_name}!")
+                break
+            except Exception as e:
+                last_err = e
+                print(f"Model {m_name} lỗi hoặc không được hỗ trợ: {str(e)}")
+                continue
+                
+        if not response_data:
+            print("Tất cả các model thử nghiệm đều thất bại.")
+            if last_err:
+                raise last_err
+            else:
+                raise Exception("Không thể khởi tạo dịch thuật Gemini.")
+                
+        try:
             # Chuyển kết quả JSON thành từ điển ánh xạ
             result_map = {}
             for item in response_data.get("translations", []):
@@ -396,9 +660,8 @@ Hãy dịch toàn bộ danh sách trên và trả về kết quả dưới đị
             return result_map
             
         except Exception as e:
-            print(f"Lỗi gọi Gemini API: {str(e)}")
+            print(f"Lỗi phân tích kết quả dịch: {str(e)}")
             traceback.print_exc()
-            # Nếu xảy ra lỗi mạng hoặc API, trả về từ điển rỗng để dùng lại câu thoại gốc
             return {}
 
     def wrap_text(self, text: str, font, max_width: float) -> list:

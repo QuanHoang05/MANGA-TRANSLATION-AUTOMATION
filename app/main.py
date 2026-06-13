@@ -45,7 +45,7 @@ app.mount("/static", StaticFiles(directory="app/static"), name="static")
 templates = Jinja2Templates(directory="app/templates")
 
 # Bộ lưu trữ trạng thái tiến trình công việc toàn cục (Global Job Store)
-# Cấu trúc dữ liệu: { job_id: { "status": str, "progress": float, "logs": list, "output_zip": str, "images": list } }
+# Cấu trúc dữ liệu: { job_id: { "status": str, "progress": float, "logs": list, "output_zip": str, "images": list, "ocr_results": list/dict, "translated_results": list/dict } }
 jobs = {}
 
 
@@ -56,7 +56,8 @@ def run_job_in_background(
     src_lang: str, 
     tone: str, 
     batch_size_pages: int,
-    additional_instructions: str = ""
+    additional_instructions: str = "",
+    custom_translation: str = ""
 ):
     """
     Thực thi quy trình dịch truyện tranh trong luồng chạy nền (background task) và cập nhật trạng thái phiên làm việc.
@@ -68,9 +69,13 @@ def run_job_in_background(
     temp_dir = os.path.join(job_dir, "temp")
     os.makedirs(temp_dir, exist_ok=True)
     
-    def status_callback(message: str, percent: float):
+    def status_callback(message: str, percent: float, event_type: str = None, data = None):
         jobs[job_id]["logs"].append(message)
         jobs[job_id]["progress"] = percent
+        if event_type == "ocr_completed":
+            jobs[job_id]["ocr_results"] = data
+        elif event_type == "translation_completed":
+            jobs[job_id]["translated_results"] = data
         
     try:
         pipeline = MangaPipeline(
@@ -79,7 +84,8 @@ def run_job_in_background(
             tone=tone,
             batch_size_pages=batch_size_pages,
             additional_instructions=additional_instructions,
-            status_callback=status_callback
+            status_callback=status_callback,
+            custom_translation=custom_translation
         )
         
         # Chạy toàn bộ tiến trình dịch thuật (OCR -> Dịch -> Inpainting -> Vẽ chữ -> Đóng gói)
@@ -128,11 +134,12 @@ async def get_index(request: Request):
 async def upload_files(
     background_tasks: BackgroundTasks,
     files: list[UploadFile] = File(...),
-    api_key: str = Form(...),
+    api_key: Optional[str] = Form(""),
     src_lang: str = Form("en"),
     tone: str = Form("tự nhiên"),
     batch_size_pages: int = Form(10),
-    additional_instructions: str = Form("")
+    additional_instructions: str = Form(""),
+    custom_translation: Optional[str] = Form("")
 ):
     """
     Tiếp nhận các tệp tin tải lên (chấp nhận 1 file ZIP hoặc nhiều file ảnh đơn lẻ),
@@ -192,7 +199,9 @@ async def upload_files(
         "progress": 0.0,
         "logs": ["HỆ THỐNG: Đã nhận tệp tin đầu vào. Bắt đầu khởi chạy tiến trình dịch ngầm..."],
         "output_zip": None,
-        "images": []
+        "images": [],
+        "ocr_results": None,
+        "translated_results": None
     }
     
     # Kích hoạt tác vụ dịch chạy ngầm thông qua BackgroundTasks của FastAPI
@@ -204,7 +213,8 @@ async def upload_files(
         src_lang,
         tone,
         batch_size_pages,
-        additional_instructions
+        additional_instructions,
+        custom_translation
     )
     
     return {"job_id": job_id}
@@ -234,7 +244,9 @@ async def stream_progress(job_id: str):
                         "status": job["status"],
                         "progress": job["progress"],
                         "log": job["logs"][idx],
-                        "images": job["images"] if job["status"] == "completed" else []
+                        "images": job["images"] if job["status"] == "completed" else [],
+                        "ocr_results": job.get("ocr_results"),
+                        "translated_results": job.get("translated_results")
                     }
                     import json
                     yield f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
