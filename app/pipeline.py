@@ -198,69 +198,220 @@ class MangaPipeline:
         merged_items.sort(key=lambda item: item["bbox"][1])
         return merged_items
 
-    def slice_large_image(self, img_path: str, output_folder: str, prefix: str, max_height: int = 10000) -> list[str]:
+    def stitch_and_smart_slice(self, raw_images: list[str], output_folder: str, target_max_height: int = 8000) -> list[str]:
         """
-        Tự động phân mảnh dọc ảnh siêu dài thành các phần nhỏ để tránh crash OpenCV/PaddleOCR
-        và giảm thiểu nguy cơ quá tải bộ nhớ (OOM).
+        Nối dọc toàn bộ ảnh của 1 chương thành 1 dải duy nhất để chữa lành bong bóng thoại bị cắt ngang,
+        sau đó sử dụng thuật toán quét phương sai ngang (Row Variance) để cắt thông minh tại khoảng trắng.
         """
         from PIL import Image
         import numpy as np
         import cv2
+        import os
         
-        img = Image.open(img_path)
-        w, h = img.size
+        self.log(f"Bắt đầu khâu (stitching) {len(raw_images)} ảnh...", 6.0)
         
-        if h <= max_height:
-            # Không cần phân mảnh, chỉ cần lưu file
-            ext = os.path.splitext(img_path)[1].lower()
-            new_path = os.path.join(output_folder, f"{prefix}{ext}")
-            img.save(new_path)
-            return [new_path]
+        loaded_images = []
+        for path in raw_images:
+            try:
+                img = Image.open(path)
+                loaded_images.append((img, path))
+            except Exception as e:
+                self.log(f"Bỏ qua ảnh lỗi: {path} - {e}", 6.0)
+                
+        if not loaded_images:
+            raise ValueError("Không thể tải được bất kỳ ảnh hợp lệ nào.")
             
-        self.log(f"Phát hiện ảnh siêu dài ({w}x{h}). Bắt đầu phân mảnh ảnh dọc...", 7.0)
+        # Chọn chiều rộng chung là chiều rộng của ảnh đầu tiên
+        w_common = loaded_images[0][0].width
         
-        # Chuyển sang ảnh grayscale để tính toán độ phân tán (variance) hàng loạt nhanh hơn
-        img_np = np.array(img.convert("RGB"))
-        gray_img = cv2.cvtColor(img_np, cv2.COLOR_RGB2GRAY)
+        resized_images = []
+        total_height = 0
+        for img, path in loaded_images:
+            w, h = img.size
+            if w != w_common:
+                h_new = int(h * (w_common / w))
+                img_resized = img.resize((w_common, h_new), Image.Resampling.LANCZOS)
+                resized_images.append(img_resized)
+                total_height += h_new
+            else:
+                resized_images.append(img)
+                total_height += h
+                
+        self.log(f"Tổng chiều cao sau khi khâu: {total_height}px. Chiều rộng chung: {w_common}px", 7.0)
         
-        slice_paths = []
+        # Nối tất cả thành 1 Mega Image
+        mega_img = Image.new("RGB", (w_common, total_height), (255, 255, 255))
+        current_y = 0
+        for img in resized_images:
+            mega_img.paste(img, (0, current_y))
+            current_y += img.height
+            
+        # Chuyển sang ảnh grayscale để tính phương sai ngang nhanh hơn
+        self.log("Đang phân tích phương sai dòng để tìm điểm cắt thông minh...", 8.0)
+        mega_np = np.array(mega_img)
+        mega_gray = cv2.cvtColor(mega_np, cv2.COLOR_RGB2GRAY)
+        
+        # Tính phương sai hàng ngang
+        row_variances = np.var(mega_gray, axis=1)
+        
         y = 0
         part_idx = 1
+        slice_paths = []
         
-        target_max = max_height
-        target_min = int(max_height * 0.75) # ví dụ: 7500px
+        min_slice_h = int(target_max_height * 0.7)
+        max_slice_h = target_max_height
         
-        while y < h:
-            if h - y <= target_max:
-                # Phân mảnh cuối cùng
-                slice_y = h
+        while y < total_height:
+            if total_height - y <= max_slice_h:
+                slice_y = total_height
             else:
-                # Tìm điểm cắt tốt nhất trong khoảng [y + target_min, y + target_max]
-                search_start = y + target_min
-                search_end = min(y + target_max, h)
+                search_start = y + min_slice_h
+                search_end = min(y + max_slice_h, total_height)
                 
-                slice_gray = gray_img[search_start:search_end]
-                # Tính phương sai hàng ngang (variance) của từng dòng để tìm khoảng trắng phân tách các khung truyện (panels)
-                row_variances = np.var(slice_gray, axis=1)
-                
-                best_local_y = np.argmin(row_variances)
+                # Quét và tìm dòng có phương sai nhỏ nhất (tức là khoảng trống trơn màu)
+                local_variances = row_variances[search_start:search_end]
+                best_local_y = np.argmin(local_variances)
                 slice_y = search_start + best_local_y
                 
             # Cắt ảnh
-            slice_img = img.crop((0, y, w, slice_y))
+            slice_img = mega_img.crop((0, y, w_common, slice_y))
             
-            ext = os.path.splitext(img_path)[1].lower()
-            part_name = f"{prefix}_part{part_idx:02d}{ext}"
+            part_name = f"{part_idx:03d}_slice.png"
             part_path = os.path.join(output_folder, part_name)
             slice_img.save(part_path)
-            
             slice_paths.append(part_path)
-            self.log(f"Đã cắt phân mảnh {part_idx}: dòng {y} đến {slice_y} (Cao: {slice_y - y}px)", 7.0)
+            
+            self.log(f"Đã cắt phân mảnh {part_idx}: dòng {y} đến {slice_y} (Cao: {slice_y - y}px)", 9.0)
             
             y = slice_y
             part_idx += 1
             
         return slice_paths
+
+    def max_inscribed_rectangle(self, mask_binary) -> tuple:
+        """
+        Tìm hình chữ nhật có diện tích lớn nhất nằm hoàn toàn trong mặt nạ nhị phân.
+        Sử dụng thuật toán quy hoạch động tối ưu O(H * W).
+        """
+        H, W = mask_binary.shape
+        heights = np.zeros(W, dtype=np.int32)
+        max_area = 0
+        best_rect = (0, 0, 0, 0) # x0, y0, x2, y2
+        
+        for r in range(H):
+            heights = np.where(mask_binary[r], heights + 1, 0)
+            
+            stack = []
+            for c in range(W + 1):
+                h = heights[c] if c < W else 0
+                while stack and heights[stack[-1]] >= h:
+                    curr_h = heights[stack.pop()]
+                    width = c if not stack else c - stack[-1] - 1
+                    area = curr_h * width
+                    if area > max_area:
+                        max_area = area
+                        start_c = stack[-1] + 1 if stack else 0
+                        end_c = c - 1
+                        start_r = r - curr_h + 1
+                        end_r = r
+                        best_rect = (start_c, start_r, end_c, end_r)
+                stack.append(c)
+        return best_rect
+
+    def find_bubble_contour_and_rect(self, cv2_img, bbox):
+        """
+        Tìm Contour của bong bóng thoại chứa tâm của bbox và tính toán Hình chữ nhật nội tiếp lớn nhất.
+        """
+        import cv2
+        import numpy as np
+        
+        x0, y0, x2, y2 = map(int, bbox)
+        box_w = x2 - x0
+        box_h = y2 - y0
+        H_img, W_img = cv2_img.shape[:2]
+        
+        # Định vị vùng crop rộng xung quanh bounding box để dò biên bong bóng thoại
+        pad_x = int(box_w * 0.3) + 15
+        pad_y = int(box_h * 0.3) + 15
+        xmin = max(0, x0 - pad_x)
+        xmax = min(W_img, x2 + pad_x)
+        ymin = max(0, y0 - pad_y)
+        ymax = min(H_img, y2 + pad_y)
+        
+        crop = cv2_img[ymin:ymax, xmin:xmax]
+        crop_h, crop_w = crop.shape[:2]
+        
+        if crop_h <= 0 or crop_w <= 0:
+            return False, None, [x0, y0, x2, y2], (255, 255, 255)
+            
+        gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
+        
+        # Lấy median màu sắc để nhận biết bong bóng sáng/tối
+        box_crop_gray = gray[max(0, y0 - ymin):min(crop_h, y2 - ymin), max(0, x0 - xmin):min(crop_w, x2 - xmin)]
+        median_val = np.median(box_crop_gray) if box_crop_gray.size > 0 else 255
+        
+        # Nhị phân hóa
+        if median_val > 127:
+            _, thresh = cv2.threshold(gray, 215, 255, cv2.THRESH_BINARY)
+        else:
+            _, thresh = cv2.threshold(gray, 60, 255, cv2.THRESH_BINARY_INV)
+            
+        # Tìm contours
+        contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        
+        # Tìm contour chứa tâm
+        cx = (x0 + x2) / 2 - xmin
+        cy = (y0 + y2) / 2 - ymin
+        
+        bubble_cnt = None
+        max_area = 0
+        
+        for cnt in contours:
+            dist = cv2.pointPolygonTest(cnt, (cx, cy), False)
+            if dist >= 0:
+                area = cv2.contourArea(cnt)
+                if area > max_area:
+                    max_area = area
+                    bubble_cnt = cnt
+                    
+        min_area = box_w * box_h * 0.35
+        is_bubble = False
+        best_rect = [x0, y0, x2, y2]
+        best_contour_abs = None
+        bg_color = (255, 255, 255)
+        
+        if bubble_cnt is not None and max_area >= min_area:
+            is_bubble = True
+            best_contour_abs = bubble_cnt + np.array([xmin, ymin])
+            
+            # Tạo mask
+            mask_cnt = np.zeros_like(thresh)
+            cv2.drawContours(mask_cnt, [bubble_cnt], -1, 255, -1)
+            
+            # Xác định màu nền
+            bg_pixels = crop[mask_cnt == 255]
+            if bg_pixels.size > 0:
+                median_bgr = np.median(bg_pixels, axis=0)
+                bg_color = (int(median_bgr[0]), int(median_bgr[1]), int(median_bgr[2]))
+                
+            # Áp dụng xói mòn để padding cách viền
+            k_size = max(3, int(min(box_w, box_h) * 0.08))
+            if k_size % 2 == 0:
+                k_size += 1
+            kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k_size, k_size))
+            eroded_mask = cv2.erode(mask_cnt, kernel, iterations=1)
+            
+            # Tìm Max Inscribed Rectangle
+            inscribed = self.max_inscribed_rectangle(eroded_mask > 0)
+            if inscribed[2] > inscribed[0] and inscribed[3] > inscribed[1]:
+                best_rect = [
+                    inscribed[0] + xmin,
+                    inscribed[1] + ymin,
+                    inscribed[2] + xmin,
+                    inscribed[3] + ymin
+                ]
+                
+        return is_bubble, best_contour_abs, best_rect, bg_color
 
     def run_pipeline(self, zip_path: str, output_zip_path: str, temp_dir: str):
         """
@@ -306,15 +457,10 @@ class MangaPipeline:
         
         # Chuẩn hóa tên ảnh về chuỗi số tăng dần liên tục (001, 002...) để tránh các ký tự tiếng Việt, khoảng trống gây lỗi dịch
         # Tiến hành phân mảnh (slice) dọc nếu ảnh siêu dài (chiều cao > 10000px) tránh crash OpenCV/PaddleOCR
-        images = []
-        part_counter = 1
-        for raw_img_path in raw_images:
-            prefix = f"{part_counter:03d}"
-            sliced_paths = self.slice_large_image(raw_img_path, input_folder, prefix)
-            images.extend(sliced_paths)
-            part_counter += len(sliced_paths)
-            
-        self.log(f"Đã chuẩn hóa và tìm thấy {len(images)} ảnh truyện tranh. Bắt đầu OCR...", 10.0)
+        # Thực hiện Stitching và Smart Slicing (Khâu dọc và cắt ảnh thông minh tại khoảng trắng)
+        images = self.stitch_and_smart_slice(raw_images, input_folder)
+        
+        self.log(f"Đã khâu và cắt thông minh thành {len(images)} trang ảnh. Bắt đầu OCR...", 10.0)
         
         # Bước 2: Nhận diện chữ bằng mô hình OCR (PaddleOCR)
         self.log("BƯỚC 2: Quét OCR nhận diện chữ trên toàn bộ ảnh...", 15.0)
@@ -485,34 +631,79 @@ class MangaPipeline:
                 items = ocr_data[img_path]
                 
                 if items:
-                    # 1. Xóa văn bản gốc bằng công nghệ Inpainting
-                    # Tạo ảnh mặt nạ nhị phân (Binary Mask)
-                    mask = np.zeros(cv2_img.shape[:2], dtype=np.uint8)
-                    has_changes = False
+                    # 1. Định vị và Xóa nền Lai (Hybrid Inpainting)
+                    # Phân loại bong bóng thoại vs SFX lơ lửng
+                    sfx_mask = np.zeros(cv2_img.shape[:2], dtype=np.uint8)
+                    has_sfx = False
+                    
+                    # Cấu trúc lưu thông tin Typesetting cho từng item
+                    typeset_info = {}
+                    
                     for item in items:
                         t_text = translated_texts.get(item["id"])
-                        if t_text and t_text != item["original_text"]:
+                        if not t_text or t_text == item["original_text"]:
+                            continue
+                            
+                        # Chạy thuật toán tìm contour bong bóng và hình chữ nhật nội tiếp lớn nhất
+                        is_bubble, bubble_cnt, best_rect, bg_color = self.find_bubble_contour_and_rect(cv2_img, item["bbox"])
+                        
+                        if is_bubble:
+                            # Nhánh 1: Tô đè màu đơn sắc của bong bóng thoại (Local Color Padding)
+                            sub_mask = np.zeros(cv2_img.shape[:2], dtype=np.uint8)
                             for poly in item["box_points"]:
                                 pts = np.array(poly, dtype=np.int32)
-                                cv2.fillPoly(mask, [pts], 255)
-                            has_changes = True
+                                cv2.fillPoly(sub_mask, [pts], 255)
+                            # Giãn nở mask chữ thêm 4 pixel để nuốt sạch nét viền chữ cũ
+                            sub_mask = cv2.dilate(sub_mask, cv2.getStructuringElement(cv2.MORPH_RECT, (4, 4)))
+                            cv2_img[sub_mask == 255] = bg_color
                             
-                    if has_changes:
-                        # Giãn nở nhẹ mặt nạ để bao phủ triệt để bóng chữ cũ
-                        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
-                        mask = cv2.dilate(mask, kernel, iterations=1)
+                            typeset_info[item["id"]] = {
+                                "bbox": best_rect,
+                                "is_sfx": False
+                            }
+                        else:
+                            # Nhánh 2: Chữ tự do/SFX lơ lửng -> Gom vào mask để chạy Inpaint nâng cao
+                            for poly in item["box_points"]:
+                                pts = np.array(poly, dtype=np.int32)
+                                cv2.fillPoly(sfx_mask, [pts], 255)
+                            has_sfx = True
+                            
+                            typeset_info[item["id"]] = {
+                                "bbox": item["bbox"], # SFX giữ nguyên box cũ
+                                "is_sfx": True
+                            }
+                            
+                    if has_sfx:
+                        # Giãn nở mặt nạ SFX thêm 5px để nuốt hết bóng và viền chữ cũ
+                        sfx_mask = cv2.dilate(sfx_mask, cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5)))
                         
-                        # Tiến hành phục hồi ảnh (tẩy chữ)
-                        inpainted_cv2 = cv2.inpaint(cv2_img, mask, inpaintRadius=5, flags=cv2.INPAINT_TELEA)
-                        
-                        # Chuyển đổi ngược về Pillow Image để vẽ chữ chất lượng cao
-                        inpainted_rgb = cv2.cvtColor(inpainted_cv2, cv2.COLOR_BGR2RGB)
-                        pil_img = Image.fromarray(inpainted_rgb)
-                    else:
-                        pil_img = Image.open(img_path).convert("RGB")
+                        # Chạy inpaint cho SFX bằng LaMa-ONNX hoặc Fallback OpenCV
+                        lama = None
+                        try:
+                            # Import động SimpleLama
+                            from simple_lama_inpainting import SimpleLama
+                            if not hasattr(self, "_lama_instance"):
+                                self.log("Đang khởi tạo mô hình AI LaMa-ONNX cho SFX...", 72.0)
+                                self._lama_instance = SimpleLama()
+                            lama = self._lama_instance
+                        except Exception as le:
+                            print(f"Cảnh báo: Không dùng được LaMa-ONNX ({le}). Sử dụng OpenCV Inpaint làm dự phòng.")
+                            
+                        if lama is not None:
+                            # LaMa nhận PIL Image và PIL Mask
+                            pil_img_temp = Image.fromarray(cv2.cvtColor(cv2_img, cv2.COLOR_BGR2RGB))
+                            pil_mask_temp = Image.fromarray(sfx_mask)
+                            inpainted_pil = lama(pil_img_temp, pil_mask_temp)
+                            cv2_img = cv2.cvtColor(np.array(inpainted_pil), cv2.COLOR_RGB2BGR)
+                        else:
+                            # OpenCV Inpaint
+                            cv2_img = cv2.inpaint(cv2_img, sfx_mask, inpaintRadius=8, flags=cv2.INPAINT_TELEA)
+                            
+                    # Chuyển sang PIL Image để vẽ chữ tiếng Việt mới chất lượng cao
+                    pil_img = Image.fromarray(cv2.cvtColor(cv2_img, cv2.COLOR_BGR2RGB))
                 else:
-                    # Nếu trang không chứa văn bản, chỉ cần mở trực tiếp bằng Pillow
                     pil_img = Image.open(img_path).convert("RGB")
+                    typeset_info = {}
                     
                 # 2. Vẽ chữ dịch mới lên ảnh
                 draw = ImageDraw.Draw(pil_img)
@@ -520,8 +711,9 @@ class MangaPipeline:
                 for item in items:
                     t_text = translated_texts.get(item["id"])
                     if t_text and t_text != item["original_text"]:
-                        # Tiến hành ngắt câu và vẽ chữ cân đối vào hộp thoại
-                        self.draw_text_in_box(draw, t_text, item["bbox"], font_path)
+                        # Lấy thông tin tọa độ và định dạng chữ đã tối ưu từ bước trước
+                        info = typeset_info.get(item["id"], {"bbox": item["bbox"], "is_sfx": False})
+                        self.draw_text_in_box(draw, t_text, info["bbox"], font_path, is_sfx=info["is_sfx"])
                     
                 # Lưu ảnh kết quả vào thư mục đầu ra
                 output_img_path = os.path.join(output_folder, img_name)
@@ -691,10 +883,10 @@ Hãy dịch toàn bộ danh sách trên và trả về kết quả dưới đị
             lines.append(" ".join(current_line))
         return lines
 
-    def draw_text_in_box(self, draw: ImageDraw.Draw, text: str, bbox: list, font_path: str):
+    def draw_text_in_box(self, draw: ImageDraw.Draw, text: str, bbox: list, font_path: str, is_sfx: bool = False):
         """
         Tự động chọn kích thước font chữ tối ưu, ngắt dòng và vẽ văn bản cân giữa 
-        vào bên trong hộp giới hạn [x0, y0, x2, y2]. Có tạo viền trắng để tăng độ nét.
+        vào bên trong hộp giới hạn [x0, y0, x2, y2]. Có tạo viền để tăng độ nét.
         """
         x0, y0, x2, y2 = bbox
         box_w = x2 - x0
@@ -766,13 +958,25 @@ Hãy dịch toàn bộ danh sách trên và trả về kết quả dưới đị
             
             current_x = x0 + (box_w - line_w) / 2
             
-            # Vẽ chữ màu đen với viền trắng stroke dày 2px để tăng độ tương phản trên mọi phông nền
-            draw.text(
-                (current_x, current_y), 
-                line, 
-                fill=(0, 0, 0), 
-                font=optimal_font,
-                stroke_width=2,
-                stroke_fill=(255, 255, 255)
-            )
+            # Cấu hình màu vẽ và độ dày viền tùy thuộc vào loại chữ (SFX vs Bong bóng)
+            if is_sfx:
+                # SFX: Vẽ chữ màu trắng với viền đen dày để che đi chữ Trung Quốc cũ lơ lửng
+                draw.text(
+                    (current_x, current_y), 
+                    line, 
+                    fill=(255, 255, 255), 
+                    font=optimal_font,
+                    stroke_width=4,
+                    stroke_fill=(0, 0, 0)
+                )
+            else:
+                # Bong bóng thoại: Chữ màu đen, viền trắng mỏng 2px
+                draw.text(
+                    (current_x, current_y), 
+                    line, 
+                    fill=(0, 0, 0), 
+                    font=optimal_font,
+                    stroke_width=2,
+                    stroke_fill=(255, 255, 255)
+                )
             current_y += line_h + spacing
