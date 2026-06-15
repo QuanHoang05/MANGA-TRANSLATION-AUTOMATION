@@ -15,6 +15,12 @@ _ocr_instances = {}
 
 def get_ocr(lang):
     global _ocr_instances
+    # Ánh xạ ngôn ngữ viết tắt sang định dạng PaddleOCR hỗ trợ
+    if lang.lower() == "ko":
+        lang = "korean"
+    elif lang.lower() == "jp":
+        lang = "japan"
+        
     if lang not in _ocr_instances:
         # Import bên trong hàm để giúp ứng dụng khởi động nhanh hơn và tránh lỗi crash
         # nếu thư viện paddleocr chưa được cài đặt
@@ -58,13 +64,16 @@ def get_ocr(lang):
 
 
 class MangaPipeline:
-    def __init__(self, api_key: str, src_lang: str = "en", tone: str = "tự nhiên", batch_size_pages: int = 10, additional_instructions: str = "", status_callback=None, custom_translation: str = ""):
+    def __init__(self, api_key: str, src_lang: str = "en", tone: str = "tự nhiên", batch_size_pages: int = 10, additional_instructions: str = "", status_callback=None, custom_translation: str = "", use_yolo: bool = False):
         self.api_key = api_key
         self.src_lang = src_lang
         self.tone = tone
         self.batch_size_pages = batch_size_pages
         self.additional_instructions = additional_instructions
         self.status_callback = status_callback
+        self.use_yolo = False
+        self.yolo_model = None
+
         
         # Cấu hình API cho Google Gemini
         if api_key:
@@ -88,6 +97,47 @@ class MangaPipeline:
                             self.custom_translation_map[item["id"]] = item["translated_text"]
             except Exception as pe:
                 print(f"Cảnh báo: Không thể phân tích cú pháp custom_translation JSON: {pe}")
+
+    def load_yolo_model(self):
+        """
+        Khởi tạo mô hình YOLOv8 cho việc nhận diện bong bóng thoại nếu thư viện và file model tồn tại.
+        """
+        try:
+            from ultralytics import YOLO
+            import os
+            model_path = os.path.join("models", "yolov8_comic.pt")
+            if os.path.exists(model_path):
+                self.yolo_model = YOLO(model_path)
+                print(f"HỆ THỐNG: Đã nạp thành công mô hình YOLOv8 từ {model_path}.")
+            else:
+                print(f"HỆ THỐNG CẢNH BÁO: Không tìm thấy file model YOLO tại {model_path}.")
+                self.use_yolo = False
+        except ImportError:
+            print("HỆ THỐNG CẢNH BÁO: Thư viện ultralytics chưa được cài đặt. Tắt tính năng YOLO.")
+            self.use_yolo = False
+        except Exception as e:
+            print(f"Lỗi khi nạp mô hình YOLO: {e}")
+            self.use_yolo = False
+
+    def detect_bubbles_yolo(self, cv_img) -> list:
+        """
+        Sử dụng YOLOv8 để trả về danh sách các bounding box của bong bóng thoại.
+        Trả về list các list tọa độ: [[x1, y1, x2, y2], ...]
+        """
+        if not self.yolo_model:
+            return []
+            
+        try:
+            results = self.yolo_model.predict(cv_img, verbose=False, conf=0.25)
+            boxes = []
+            if len(results) > 0 and results[0].boxes:
+                for box in results[0].boxes.xyxy.cpu().numpy():
+                    x1, y1, x2, y2 = map(int, box[:4])
+                    boxes.append([x1, y1, x2, y2])
+            return boxes
+        except Exception as e:
+            print(f"Lỗi khi nhận diện bong bóng thoại bằng YOLO: {e}")
+            return []
             
     def log(self, message: str, percent: float, event_type: str = None, data = None):
         if self.status_callback:
@@ -166,7 +216,7 @@ class MangaPipeline:
             
             # Ghép chuỗi văn bản gốc
             texts = [item["original_text"] for item in group]
-            if lang in ["ch", "japan", "ko"]:
+            if lang.lower() in ["ch", "chinese", "jp", "japan", "japanese", "ko", "korean"]:
                 combined_text = "".join(texts)
             else:
                 combined_text = " ".join(texts)
@@ -198,10 +248,11 @@ class MangaPipeline:
         merged_items.sort(key=lambda item: item["bbox"][1])
         return merged_items
 
-    def stitch_and_smart_slice(self, raw_images: list[str], output_folder: str, target_max_height: int = 8000) -> list[str]:
+    def stitch_and_smart_slice(self, raw_images: list[str], output_folder: str, target_max_height: int = 2000) -> list[str]:
         """
         Nối dọc toàn bộ ảnh của 1 chương thành 1 dải duy nhất để chữa lành bong bóng thoại bị cắt ngang,
-        sau đó sử dụng thuật toán quét phương sai ngang (Row Variance) để cắt thông minh tại khoảng trắng.
+        sau đó sử dụng thuật toán quét phương sai ngang (Row Variance) để cắt thông minh tại khoảng trắng
+        phù hợp với tiêu chuẩn PaddleOCR (2000px segment).
         """
         from PIL import Image
         import numpy as np
@@ -487,9 +538,20 @@ class MangaPipeline:
         
         self.log(f"Đã khâu và cắt thông minh thành {len(images)} trang ảnh. Bắt đầu OCR...", 10.0)
         
-        # Bước 2: Nhận diện chữ bằng mô hình OCR (PaddleOCR)
-        self.log("BƯỚC 2: Quét OCR nhận diện chữ trên toàn bộ ảnh...", 15.0)
-        ocr_model = get_ocr(self.src_lang)
+        # BƯỚC 2: Nhận diện chữ (OCR)
+        self.log("BƯỚC 2: Đang tải mô hình nhận diện chữ (PaddleOCR)...", 15.0)
+        
+        if self.src_lang.lower() == "auto":
+            self.log("Đang dò ngôn ngữ tự động từ ảnh đầu tiên...", 15.5)
+            sample_img = images[0]
+            detected_lang = self.detect_image_language(sample_img)
+            self.src_lang = detected_lang
+            self.log(f"Đã nhận diện ngôn ngữ: {detected_lang}", 16.0)
+            
+        from paddleocr import PaddleOCR
+        lang_map = {"en": "en", "japan": "japan", "korean": "korean", "ch": "ch"}
+        ocr_lang = lang_map.get(self.src_lang, "en")
+        ocr_model = PaddleOCR(use_angle_cls=True, lang=ocr_lang, enable_mkldnn=False, det_limit_side_len=3000, det_limit_type='max', drop_score=0.3)
         
         ocr_data = {}  # Cấu trúc: {đường_dẫn_ảnh: [ {id, text, box_points, bbox} ]}
         total_images = len(images)
@@ -657,20 +719,41 @@ class MangaPipeline:
                 
                 if items:
                     # 1. Định vị và Xóa nền Lai (Hybrid Inpainting)
-                    # Phân loại bong bóng thoại vs SFX lơ lửng
                     sfx_mask = np.zeros(cv2_img.shape[:2], dtype=np.uint8)
                     has_sfx = False
-                    
-                    # Cấu trúc lưu thông tin Typesetting cho từng item
                     typeset_info = {}
+                    
+                    yolo_boxes = []
+                    if self.use_yolo:
+                        yolo_boxes = self.detect_bubbles_yolo(cv2_img)
                     
                     for item in items:
                         t_text = translated_texts.get(item["id"])
                         if not t_text or t_text == item["original_text"]:
                             continue
                             
-                        # Chạy thuật toán tìm contour bong bóng và hình chữ nhật nội tiếp lớn nhất
-                        is_bubble, bubble_cnt, best_rect, bg_color = self.find_bubble_contour_and_rect(cv2_img, item["bbox"])
+                        # Chạy thuật toán tìm contour bong bóng và hình chữ nhật nội tiếp lớn nhất (nếu bật YOLOv8 / Bubble Detection)
+                        if self.use_yolo:
+                            matched_yolo_box = None
+                            ocr_x0, ocr_y0, ocr_x2, ocr_y2 = item["bbox"]
+                            ocr_cx = (ocr_x0 + ocr_x2) / 2
+                            ocr_cy = (ocr_y0 + ocr_y2) / 2
+                            for ybox in yolo_boxes:
+                                yx1, yy1, yx2, yy2 = ybox
+                                if yx1 <= ocr_cx <= yx2 and yy1 <= ocr_cy <= yy2:
+                                    matched_yolo_box = ybox
+                                    break
+                            
+                            if matched_yolo_box:
+                                is_bubble = True
+                                best_rect = [matched_yolo_box[0]+2, matched_yolo_box[1]+2, matched_yolo_box[2]-2, matched_yolo_box[3]-2]
+                                bg_color = (255, 255, 255)
+                            else:
+                                is_bubble, bubble_cnt, best_rect, bg_color = self.find_bubble_contour_and_rect(cv2_img, item["bbox"])
+                        else:
+                            is_bubble = True
+                            best_rect = item["bbox"]
+                            bg_color = (255, 255, 255)
                         
                         if is_bubble:
                             # Nhánh 1: Tô đè màu đơn sắc của bong bóng thoại (Local Color Padding)
@@ -740,6 +823,16 @@ class MangaPipeline:
                         info = typeset_info.get(item["id"], {"bbox": item["bbox"], "is_sfx": False})
                         self.draw_text_in_box(draw, t_text, info["bbox"], font_path, is_sfx=info["is_sfx"])
                     
+                # Làm nét ảnh (Upscaling & Sharpening)
+                w_img, h_img = pil_img.size
+                if w_img < 1200:
+                    ratio = 1200 / w_img
+                    new_w = 1200
+                    new_h = int(h_img * ratio)
+                    pil_img = pil_img.resize((new_w, new_h), Image.Resampling.LANCZOS)
+                    from PIL import ImageFilter
+                    pil_img = pil_img.filter(ImageFilter.SHARPEN)
+                    
                 # Lưu ảnh kết quả vào thư mục đầu ra
                 output_img_path = os.path.join(output_folder, img_name)
                 pil_img.save(output_img_path)
@@ -750,8 +843,11 @@ class MangaPipeline:
                 # Nếu xử lý thất bại, copy ảnh gốc sang thư mục đầu ra để làm phương án dự phòng
                 shutil.copy(img_path, os.path.join(output_folder, img_name))
                 
-        # Bước 5: Đóng gói và chuẩn bị đầu ra (Archive & Output Ingestion)
+        # Bước 5: Ghép nối ảnh và chuẩn bị đầu ra (Stitch & Archive)
         self.log("BƯỚC 5: Nén file kết quả và chuẩn bị tải về...", 90.0)
+        
+        # Ghép dọc toàn bộ ảnh kết quả
+        self.stitch_output_images(output_folder, temp_dir)
         
         # Nén thư mục output thành tệp ZIP
         with zipfile.ZipFile(output_zip_path, 'w', zipfile.ZIP_DEFLATED) as zip_out:
@@ -773,13 +869,26 @@ class MangaPipeline:
             "items": items
         }
         
+        # Chuẩn hóa mã ngôn ngữ gốc hiển thị
+        lang_map = {
+            "ko": "tiếng Hàn",
+            "korean": "tiếng Hàn",
+            "japan": "tiếng Nhật",
+            "jp": "tiếng Nhật",
+            "ch": "tiếng Trung",
+            "zh": "tiếng Trung",
+            "en": "tiếng Anh",
+            "english": "tiếng Anh"
+        }
+        lang_name = lang_map.get(self.src_lang.lower(), self.src_lang)
+
         prompt = f"""
-Bạn là một dịch giả truyện tranh (manga/webtoon) chuyên nghiệp. Hãy dịch các câu thoại từ ngôn ngữ gốc sang tiếng Việt.
+Bạn là một dịch giả truyện tranh (manga/webtoon) chuyên nghiệp. Hãy dịch các câu thoại từ ngôn ngữ {lang_name} sang tiếng Việt.
 
 HƯỚNG DẪN XƯNG HÔ & PHONG CÁCH:
 - Đảm bảo xưng hô đồng bộ, tự nhiên và phù hợp với ngữ cảnh của câu chuyện (ví dụ: Ta - Ngươi, Thiếu chủ - Đại nhân, Tôi - Cậu, Anh - Em, Tỷ tỷ - Muội muội...).
 - Tông giọng dịch yêu cầu: {self.tone} (ví dụ: tự nhiên, lịch sự, cổ trang, dễ thương).
-- Dựa vào mạch truyện của các câu thoại liên tiếp để suy luận mối quan hệ nhân vật chính xác.
+- Dựa vào mạch truyện của các câu thoại liên tiếp để suy luận mối quan hệ nhân vật chính xác. BẮT BUỘC TUÂN THỦ TONE DỊCH.
 """
 
         # Bổ sung chỉ dẫn riêng từ người dùng để cá nhân hóa ngữ nghĩa dịch
@@ -917,8 +1026,8 @@ Hãy dịch toàn bộ danh sách trên và trả về kết quả dưới đị
         optimal_lines = []
         optimal_line_heights = []
         
-        # Thử nghiệm giảm kích thước font chữ từ 28 xuống 14 (Clamp tối đa 28, tối thiểu 14)
-        for font_size in range(28, 13, -2):
+        # Thử nghiệm giảm kích thước font chữ từ 28 xuống 6 (Clamp tối đa 28, tối thiểu 6)
+        for font_size in range(28, 5, -2):
             try:
                 if font_path == "Arial":
                     font = ImageFont.load_default()
@@ -949,13 +1058,13 @@ Hãy dịch toàn bộ danh sách trên và trả về kết quả dưới đị
                 optimal_line_heights = line_heights
                 break
                 
-        # Nếu không có kích cỡ nào vừa khít trong khoảng [14, 28], ép cứng kích thước font tối thiểu là 14 (Clamp)
+        # Nếu không có kích cỡ nào vừa khít trong khoảng [6, 28], ép cứng kích thước font tối thiểu là 6 (Clamp)
         if optimal_font is None:
             try:
                 if font_path == "Arial":
                     optimal_font = ImageFont.load_default()
                 else:
-                    optimal_font = ImageFont.truetype(font_path, 14)
+                    optimal_font = ImageFont.truetype(font_path, 6)
             except Exception:
                 optimal_font = ImageFont.load_default()
             optimal_lines = self.wrap_text(text, optimal_font, box_w)
@@ -1000,3 +1109,150 @@ Hãy dịch toàn bộ danh sách trên và trả về kết quả dưới đị
                     stroke_fill=(255, 255, 255)
                 )
             current_y += line_h + spacing
+
+    def stitch_output_images(self, output_folder: str, temp_dir: str):
+        """
+        Ghép nối dọc tất cả các ảnh trong thư mục output thành một ảnh dài duy nhất
+        (Webtoon format) và lưu lại dưới dạng file JPEG chất lượng cao.
+        """
+        import cv2
+        import numpy as np
+        
+        image_extensions = ('.png', '.jpg', '.jpeg', '.webp', '.bmp')
+        image_files = []
+        for file in sorted(os.listdir(output_folder)):
+            if file.lower().endswith(image_extensions) and not file.startswith('._'):
+                image_files.append(os.path.join(output_folder, file))
+                
+        if not image_files:
+            return
+            
+        images = []
+        for path in image_files:
+            img = cv2.imread(path)
+            if img is not None:
+                images.append(img)
+                
+        if not images:
+            return
+            
+        # Nối dọc (vstack) tất cả các ảnh lại với nhau
+        # Đảm bảo các ảnh cùng chiều rộng trước khi nối
+        w_common = images[0].shape[1]
+        resized_images = []
+        for img in images:
+            h, w = img.shape[:2]
+            if w != w_common:
+                h_new = int(h * (w_common / w))
+                img_resized = cv2.resize(img, (w_common, h_new), interpolation=cv2.INTER_LANCZOS4)
+                resized_images.append(img_resized)
+            else:
+                resized_images.append(img)
+                
+        stitched_img = np.vstack(resized_images)
+        stitched_path = os.path.join(temp_dir, "translated_stitched.jpg")
+        
+        # Lưu chất lượng JPEG cao (95)
+    def detect_image_language(self, img_path: str) -> str:
+        """
+        Dùng model OCR 'ch' để đọc thử 1 ảnh, quét các ký tự để đoán ngôn ngữ.
+        """
+        try:
+            from paddleocr import PaddleOCR
+            temp_ocr = PaddleOCR(use_angle_cls=True, lang="ch", enable_mkldnn=False, det_limit_side_len=3000, det_limit_type='max', drop_score=0.3)
+            try:
+                result = temp_ocr.ocr(img_path)
+            except TypeError:
+                result = temp_ocr.ocr(img_path, cls=True)
+                
+            if not result or not result[0]:
+                return "en"
+                
+            full_text = ""
+            for line in result[0]:
+                full_text += line[1][0]
+                
+            has_kana = any('\u3040' <= char <= '\u30ff' for char in full_text)
+            has_hangul = any('\uac00' <= char <= '\ud7a3' for char in full_text)
+            has_hanzi = any('\u4e00' <= char <= '\u9fff' for char in full_text)
+            
+            if has_kana:
+                return "japan"
+            elif has_hangul:
+                return "korean"
+            elif has_hanzi:
+                return "ch"
+            else:
+                return "en"
+        except Exception as e:
+            self.log(f"Lỗi khi dò ngôn ngữ tự động: {e}. Mặc định dùng 'en'.", 15.5)
+            return "en"
+
+    def draw_text_with_custom_size(self, draw, text: str, bbox: list, font_path: str, custom_size=None):
+        from PIL import ImageFont
+        x0, y0, x2, y2 = bbox
+        box_w = x2 - x0
+        box_h = y2 - y0
+
+        if custom_size and str(custom_size).isdigit() and int(custom_size) > 0:
+            font_size = int(custom_size)
+            try:
+                font = ImageFont.truetype(font_path, font_size) if font_path != "Arial" else ImageFont.load_default()
+            except:
+                font = ImageFont.load_default()
+                
+            lines = self.wrap_text(text, font, box_w)
+            line_heights = [font.getbbox(line)[3] - font.getbbox(line)[1] for line in lines]
+            spacing = 4
+            total_text_h = sum(line_heights) + spacing * (len(lines) - 1) if line_heights else 0
+            current_y = y0 + (box_h - total_text_h) / 2
+            
+            for i, line in enumerate(lines):
+                l_bbox = font.getbbox(line)
+                line_w = l_bbox[2] - l_bbox[0]
+                current_x = x0 + (box_w - line_w) / 2
+                draw.text((current_x, current_y), line, fill=(0, 0, 0), font=font, stroke_width=2, stroke_fill=(255, 255, 255))
+                current_y += line_heights[i] + spacing
+        else:
+            self.draw_text_in_box(draw, text, bbox, font_path, False)
+
+    def rerender_single_image(self, job_dir: str, filename: str, boxes: list):
+        import cv2
+        import numpy as np
+        import os
+        from PIL import Image, ImageDraw
+        
+        input_path = os.path.join(job_dir, "temp", "input", filename)
+        output_folder = os.path.join(job_dir, "temp", "output")
+        output_path = os.path.join(output_folder, filename)
+        
+        if not os.path.exists(input_path):
+            raise Exception(f"Không tìm thấy ảnh gốc {filename}")
+            
+        cv2_img = cv2.imread(input_path)
+        if cv2_img is None:
+            raise Exception(f"Lỗi đọc ảnh {filename}")
+            
+        # Xóa nền cũ (Tô trắng toàn bộ vùng box do người dùng chỉ định)
+        for box in boxes:
+            x0, y0, x2, y2 = [int(v) for v in box["bbox"]]
+            cv2.rectangle(cv2_img, (x0, y0), (x2, y2), (255, 255, 255), -1)
+            
+        cv2_img_rgb = cv2.cvtColor(cv2_img, cv2.COLOR_BGR2RGB)
+        pil_img = Image.fromarray(cv2_img_rgb)
+        draw = ImageDraw.Draw(pil_img)
+        font_path = os.path.join("fonts", "Nunito-Bold.ttf")
+        if not os.path.exists(font_path):
+            font_path = "Arial"
+            
+        # Vẽ chữ mới
+        for box in boxes:
+            text = box.get("text", "")
+            if not text: continue
+            self.draw_text_with_custom_size(draw, text, box["bbox"], font_path, box.get("font_size"))
+            
+        cv2_result = cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
+        cv2.imwrite(output_path, cv2_result)
+        
+        self.stitch_output_images(output_folder, os.path.join(job_dir, "temp"))
+        return output_path

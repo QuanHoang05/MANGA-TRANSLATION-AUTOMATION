@@ -1,0 +1,1155 @@
+[
+  [
+    "ShallowReactive",
+    1
+  ],
+  {
+    "data": 2,
+    "state": 254,
+    "once": 321,
+    "_errors": 323,
+    "serverRendered": 325,
+    "path": 326,
+    "pinia": 327
+  },
+  [
+    "ShallowReactive",
+    3
+  ],
+  {
+    "$fGK8wsi3JP_N5KyKxONqYxc-1rnq6L7O4msIct_OfANA": 4,
+    "$fDR6G279BU6yQqe7WtqZwYBwSA3A3KnbI8Z7AZFZBRVM": 8
+  },
+  {
+    "code": 5,
+    "msg": 6,
+    "data": 7
+  },
+  200,
+  "success",
+  "https://yccmdsws1sbb.iumigc.com/",
+  {
+    "code": 5,
+    "msg": 6,
+    "data": 9
+  },
+  {
+    "domain": 10,
+    "comicsId": 11,
+    "comicsTitle": 12,
+    "coverImg": 13,
+    "backImg": 13,
+    "tagList": 14,
+    "classList": 21,
+    "info": 24,
+    "chapterNewNum": 25,
+    "isEnd": 26,
+    "isBookShelf": 26,
+    "fakeLikes": 27,
+    "commentNum": 28,
+    "fakeWatchTimes": 29,
+    "userId": 28,
+    "isLike": 26,
+    "chapterList": 30,
+    "createdAt": 252,
+    "updatedAt": 253
+  },
+  "https://3bj4ihkofmej.iumigc.com/",
+  34843,
+  "少爷的替身",
+  "jhcomics/20260320/yy/zz/jg/5u/3448f023c9c14372b61eaccea5c0b90d-0.jpg",
+  [
+    15,
+    18
+  ],
+  {
+    "tagId": 16,
+    "title": 17
+  },
+  752,
+  "都市",
+  {
+    "tagId": 19,
+    "title": 20
+  },
+  117,
+  "韩漫",
+  [
+    22
+  ],
+  {
+    "classId": 23,
+    "title": 20
+  },
+  2,
+  "財閥少爺砸錢要我假扮他替身,容貌聲線連親媽都難辨真偽,可家裏的女仆卻問我少爺在哪?",
+  42,
+  false,
+  4995,
+  1,
+  41848,
+  [
+    31,
+    36,
+    40,
+    45,
+    50,
+    56,
+    61,
+    66,
+    72,
+    77,
+    83,
+    88,
+    93,
+    99,
+    104,
+    109,
+    115,
+    120,
+    125,
+    130,
+    136,
+    141,
+    147,
+    152,
+    157,
+    163,
+    168,
+    173,
+    179,
+    184,
+    190,
+    195,
+    200,
+    205,
+    211,
+    217,
+    222,
+    227,
+    232,
+    237,
+    242,
+    247
+  ],
+  {
+    "chapterId": 32,
+    "chapterTitle": 33,
+    "coverImg": 13,
+    "chapterNum": 28,
+    "comicsId": 11,
+    "fakeWatchTimes": 34,
+    "createdAt": 35
+  },
+  683972,
+  "第1話",
+  75029,
+  "2026-03-26 01:25:34",
+  {
+    "chapterId": 37,
+    "chapterTitle": 38,
+    "coverImg": 13,
+    "chapterNum": 23,
+    "comicsId": 11,
+    "fakeWatchTimes": 39,
+    "createdAt": 35
+  },
+  683973,
+  "第2話",
+  21465,
+  {
+    "chapterId": 41,
+    "chapterTitle": 42,
+    "coverImg": 13,
+    "chapterNum": 43,
+    "comicsId": 11,
+    "fakeWatchTimes": 44,
+    "createdAt": 35
+  },
+  683971,
+  "第3話",
+  3,
+  81748,
+  {
+    "chapterId": 46,
+    "chapterTitle": 47,
+    "coverImg": 13,
+    "chapterNum": 48,
+    "comicsId": 11,
+    "fakeWatchTimes": 49,
+    "createdAt": 35
+  },
+  683974,
+  "第4話",
+  4,
+  13590,
+  {
+    "chapterId": 51,
+    "chapterTitle": 52,
+    "coverImg": 13,
+    "chapterNum": 53,
+    "comicsId": 11,
+    "fakeWatchTimes": 54,
+    "createdAt": 55
+  },
+  683975,
+  "第5話",
+  5,
+  45850,
+  "2026-03-26 01:25:35",
+  {
+    "chapterId": 57,
+    "chapterTitle": 58,
+    "coverImg": 13,
+    "chapterNum": 59,
+    "comicsId": 11,
+    "fakeWatchTimes": 60,
+    "createdAt": 55
+  },
+  683977,
+  "第6話",
+  6,
+  53192,
+  {
+    "chapterId": 62,
+    "chapterTitle": 63,
+    "coverImg": 13,
+    "chapterNum": 64,
+    "comicsId": 11,
+    "fakeWatchTimes": 65,
+    "createdAt": 55
+  },
+  683976,
+  "第7話",
+  7,
+  35839,
+  {
+    "chapterId": 67,
+    "chapterTitle": 68,
+    "coverImg": 13,
+    "chapterNum": 69,
+    "comicsId": 11,
+    "fakeWatchTimes": 70,
+    "createdAt": 71
+  },
+  683979,
+  "第8話",
+  8,
+  81801,
+  "2026-03-26 01:25:36",
+  {
+    "chapterId": 73,
+    "chapterTitle": 74,
+    "coverImg": 13,
+    "chapterNum": 75,
+    "comicsId": 11,
+    "fakeWatchTimes": 76,
+    "createdAt": 71
+  },
+  683978,
+  "第9話",
+  9,
+  40605,
+  {
+    "chapterId": 78,
+    "chapterTitle": 79,
+    "coverImg": 13,
+    "chapterNum": 80,
+    "comicsId": 11,
+    "fakeWatchTimes": 81,
+    "createdAt": 82
+  },
+  684008,
+  "第10話",
+  10,
+  37886,
+  "2026-03-26 01:25:46",
+  {
+    "chapterId": 84,
+    "chapterTitle": 85,
+    "coverImg": 13,
+    "chapterNum": 86,
+    "comicsId": 11,
+    "fakeWatchTimes": 87,
+    "createdAt": 71
+  },
+  683980,
+  "第11話",
+  11,
+  17322,
+  {
+    "chapterId": 89,
+    "chapterTitle": 90,
+    "coverImg": 13,
+    "chapterNum": 91,
+    "comicsId": 11,
+    "fakeWatchTimes": 92,
+    "createdAt": 71
+  },
+  683981,
+  "第12話",
+  12,
+  31300,
+  {
+    "chapterId": 94,
+    "chapterTitle": 95,
+    "coverImg": 13,
+    "chapterNum": 96,
+    "comicsId": 11,
+    "fakeWatchTimes": 97,
+    "createdAt": 98
+  },
+  683984,
+  "第13話",
+  13,
+  46197,
+  "2026-03-26 01:25:37",
+  {
+    "chapterId": 100,
+    "chapterTitle": 101,
+    "coverImg": 13,
+    "chapterNum": 102,
+    "comicsId": 11,
+    "fakeWatchTimes": 103,
+    "createdAt": 98
+  },
+  683982,
+  "第14話",
+  14,
+  54264,
+  {
+    "chapterId": 105,
+    "chapterTitle": 106,
+    "coverImg": 13,
+    "chapterNum": 107,
+    "comicsId": 11,
+    "fakeWatchTimes": 108,
+    "createdAt": 98
+  },
+  683983,
+  "第15話",
+  15,
+  77962,
+  {
+    "chapterId": 110,
+    "chapterTitle": 111,
+    "coverImg": 13,
+    "chapterNum": 112,
+    "comicsId": 11,
+    "fakeWatchTimes": 113,
+    "createdAt": 114
+  },
+  683986,
+  "第16話",
+  16,
+  25944,
+  "2026-03-26 01:25:38",
+  {
+    "chapterId": 116,
+    "chapterTitle": 117,
+    "coverImg": 13,
+    "chapterNum": 118,
+    "comicsId": 11,
+    "fakeWatchTimes": 119,
+    "createdAt": 114
+  },
+  683985,
+  "第17話",
+  17,
+  29129,
+  {
+    "chapterId": 121,
+    "chapterTitle": 122,
+    "coverImg": 13,
+    "chapterNum": 123,
+    "comicsId": 11,
+    "fakeWatchTimes": 124,
+    "createdAt": 114
+  },
+  683988,
+  "第18話",
+  18,
+  28275,
+  {
+    "chapterId": 126,
+    "chapterTitle": 127,
+    "coverImg": 13,
+    "chapterNum": 128,
+    "comicsId": 11,
+    "fakeWatchTimes": 129,
+    "createdAt": 114
+  },
+  683987,
+  "第19話",
+  19,
+  20603,
+  {
+    "chapterId": 131,
+    "chapterTitle": 132,
+    "coverImg": 13,
+    "chapterNum": 133,
+    "comicsId": 11,
+    "fakeWatchTimes": 134,
+    "createdAt": 135
+  },
+  683989,
+  "第20話",
+  20,
+  66129,
+  "2026-03-26 01:25:39",
+  {
+    "chapterId": 137,
+    "chapterTitle": 138,
+    "coverImg": 13,
+    "chapterNum": 139,
+    "comicsId": 11,
+    "fakeWatchTimes": 140,
+    "createdAt": 135
+  },
+  683990,
+  "第21話",
+  21,
+  43374,
+  {
+    "chapterId": 142,
+    "chapterTitle": 143,
+    "coverImg": 13,
+    "chapterNum": 144,
+    "comicsId": 11,
+    "fakeWatchTimes": 145,
+    "createdAt": 146
+  },
+  683992,
+  "第22話",
+  22,
+  32020,
+  "2026-03-26 01:25:40",
+  {
+    "chapterId": 148,
+    "chapterTitle": 149,
+    "coverImg": 13,
+    "chapterNum": 150,
+    "comicsId": 11,
+    "fakeWatchTimes": 151,
+    "createdAt": 146
+  },
+  683991,
+  "第23話",
+  23,
+  96183,
+  {
+    "chapterId": 153,
+    "chapterTitle": 154,
+    "coverImg": 13,
+    "chapterNum": 155,
+    "comicsId": 11,
+    "fakeWatchTimes": 156,
+    "createdAt": 146
+  },
+  683993,
+  "第24話",
+  24,
+  73913,
+  {
+    "chapterId": 158,
+    "chapterTitle": 159,
+    "coverImg": 13,
+    "chapterNum": 160,
+    "comicsId": 11,
+    "fakeWatchTimes": 161,
+    "createdAt": 162
+  },
+  683994,
+  "第25話",
+  25,
+  25937,
+  "2026-03-26 01:25:41",
+  {
+    "chapterId": 164,
+    "chapterTitle": 165,
+    "coverImg": 13,
+    "chapterNum": 166,
+    "comicsId": 11,
+    "fakeWatchTimes": 167,
+    "createdAt": 162
+  },
+  683996,
+  "第26話",
+  26,
+  35059,
+  {
+    "chapterId": 169,
+    "chapterTitle": 170,
+    "coverImg": 13,
+    "chapterNum": 171,
+    "comicsId": 11,
+    "fakeWatchTimes": 172,
+    "createdAt": 162
+  },
+  683995,
+  "第27話",
+  27,
+  33766,
+  {
+    "chapterId": 174,
+    "chapterTitle": 175,
+    "coverImg": 13,
+    "chapterNum": 176,
+    "comicsId": 11,
+    "fakeWatchTimes": 177,
+    "createdAt": 178
+  },
+  683997,
+  "第28話",
+  28,
+  79037,
+  "2026-03-26 01:25:42",
+  {
+    "chapterId": 180,
+    "chapterTitle": 181,
+    "coverImg": 13,
+    "chapterNum": 182,
+    "comicsId": 11,
+    "fakeWatchTimes": 183,
+    "createdAt": 178
+  },
+  683998,
+  "第29話",
+  29,
+  73831,
+  {
+    "chapterId": 185,
+    "chapterTitle": 186,
+    "coverImg": 13,
+    "chapterNum": 187,
+    "comicsId": 11,
+    "fakeWatchTimes": 188,
+    "createdAt": 189
+  },
+  684000,
+  "第30話",
+  30,
+  91356,
+  "2026-03-26 01:25:43",
+  {
+    "chapterId": 191,
+    "chapterTitle": 192,
+    "coverImg": 13,
+    "chapterNum": 193,
+    "comicsId": 11,
+    "fakeWatchTimes": 194,
+    "createdAt": 178
+  },
+  683999,
+  "第31話",
+  31,
+  75275,
+  {
+    "chapterId": 196,
+    "chapterTitle": 197,
+    "coverImg": 13,
+    "chapterNum": 198,
+    "comicsId": 11,
+    "fakeWatchTimes": 199,
+    "createdAt": 189
+  },
+  684001,
+  "第32話",
+  32,
+  10595,
+  {
+    "chapterId": 201,
+    "chapterTitle": 202,
+    "coverImg": 13,
+    "chapterNum": 203,
+    "comicsId": 11,
+    "fakeWatchTimes": 204,
+    "createdAt": 189
+  },
+  684002,
+  "第33話",
+  33,
+  88795,
+  {
+    "chapterId": 206,
+    "chapterTitle": 207,
+    "coverImg": 13,
+    "chapterNum": 208,
+    "comicsId": 11,
+    "fakeWatchTimes": 209,
+    "createdAt": 210
+  },
+  684005,
+  "第34話",
+  34,
+  41092,
+  "2026-03-26 01:25:45",
+  {
+    "chapterId": 212,
+    "chapterTitle": 213,
+    "coverImg": 13,
+    "chapterNum": 214,
+    "comicsId": 11,
+    "fakeWatchTimes": 215,
+    "createdAt": 216
+  },
+  684003,
+  "第35話",
+  35,
+  81126,
+  "2026-03-26 01:25:44",
+  {
+    "chapterId": 218,
+    "chapterTitle": 219,
+    "coverImg": 13,
+    "chapterNum": 220,
+    "comicsId": 11,
+    "fakeWatchTimes": 221,
+    "createdAt": 210
+  },
+  684004,
+  "第36話",
+  36,
+  15504,
+  {
+    "chapterId": 223,
+    "chapterTitle": 224,
+    "coverImg": 13,
+    "chapterNum": 225,
+    "comicsId": 11,
+    "fakeWatchTimes": 226,
+    "createdAt": 210
+  },
+  684006,
+  "第37話",
+  37,
+  47932,
+  {
+    "chapterId": 228,
+    "chapterTitle": 229,
+    "coverImg": 13,
+    "chapterNum": 230,
+    "comicsId": 11,
+    "fakeWatchTimes": 231,
+    "createdAt": 82
+  },
+  684007,
+  "第38話",
+  38,
+  64776,
+  {
+    "chapterId": 233,
+    "chapterTitle": 234,
+    "coverImg": 13,
+    "chapterNum": 235,
+    "comicsId": 11,
+    "fakeWatchTimes": 236,
+    "createdAt": 82
+  },
+  684009,
+  "第39話",
+  39,
+  24524,
+  {
+    "chapterId": 238,
+    "chapterTitle": 239,
+    "coverImg": 13,
+    "chapterNum": 240,
+    "comicsId": 11,
+    "fakeWatchTimes": 241,
+    "createdAt": 82
+  },
+  684010,
+  "第40話",
+  40,
+  42594,
+  {
+    "chapterId": 243,
+    "chapterTitle": 244,
+    "coverImg": 13,
+    "chapterNum": 245,
+    "comicsId": 11,
+    "fakeWatchTimes": 246,
+    "createdAt": 82
+  },
+  684011,
+  "第41話",
+  41,
+  58711,
+  {
+    "chapterId": 248,
+    "chapterTitle": 249,
+    "coverImg": 13,
+    "chapterNum": 25,
+    "comicsId": 11,
+    "fakeWatchTimes": 250,
+    "createdAt": 251
+  },
+  687831,
+  "第42話",
+  30002,
+  "2026-03-26 19:43:33",
+  "2026-03-25 19:14:37",
+  "2026-06-13 20:06:14",
+  [
+    "Reactive",
+    255
+  ],
+  {
+    "$scomic-reader-34843-1": 256,
+    "$scomic-reader-loading-34843-1": 26,
+    "$scomic-reader-detail-34843": 261,
+    "$scomic-chapter-groups-34843": 266,
+    "$scomic-reader-group-34843": 312,
+    "$scomic-chapter-modal-34843": 26,
+    "$ssite-config": 313
+  },
+  {
+    "comicId": 11,
+    "comicTitle": 12,
+    "chapterId": 32,
+    "chapterNumber": 28,
+    "chapterTitle": 257,
+    "images": 258,
+    "prevChapter": 260,
+    "nextChapter": 23,
+    "totalChapters": 25
+  },
+  "",
+  [
+    "Reactive",
+    259
+  ],
+  [],
+  null,
+  {
+    "id": 11,
+    "title": 12,
+    "cover": 262,
+    "description": 24,
+    "status": 263,
+    "tags": 264,
+    "viewCount": 29,
+    "updateInfo": 265,
+    "author": 257,
+    "chapters": 266,
+    "totalChapters": 25,
+    "commentCount": 28,
+    "isLike": 26
+  },
+  "https://3bj4ihkofmej.iumigc.com/jhcomics/20260320/yy/zz/jg/5u/3448f023c9c14372b61eaccea5c0b90d-0.jpg",
+  "ongoing",
+  [
+    17,
+    20
+  ],
+  "更新至42话",
+  [
+    267
+  ],
+  {
+    "range": 268,
+    "chapters": 269
+  },
+  "1-42",
+  [
+    270,
+    271,
+    272,
+    273,
+    274,
+    275,
+    276,
+    277,
+    278,
+    279,
+    280,
+    281,
+    282,
+    283,
+    284,
+    285,
+    286,
+    287,
+    288,
+    289,
+    290,
+    291,
+    292,
+    293,
+    294,
+    295,
+    296,
+    297,
+    298,
+    299,
+    300,
+    301,
+    302,
+    303,
+    304,
+    305,
+    306,
+    307,
+    308,
+    309,
+    310,
+    311
+  ],
+  {
+    "id": 32,
+    "number": 28,
+    "title": 33
+  },
+  {
+    "id": 37,
+    "number": 23,
+    "title": 38
+  },
+  {
+    "id": 41,
+    "number": 43,
+    "title": 42
+  },
+  {
+    "id": 46,
+    "number": 48,
+    "title": 47
+  },
+  {
+    "id": 51,
+    "number": 53,
+    "title": 52
+  },
+  {
+    "id": 57,
+    "number": 59,
+    "title": 58
+  },
+  {
+    "id": 62,
+    "number": 64,
+    "title": 63
+  },
+  {
+    "id": 67,
+    "number": 69,
+    "title": 68
+  },
+  {
+    "id": 73,
+    "number": 75,
+    "title": 74
+  },
+  {
+    "id": 78,
+    "number": 80,
+    "title": 79
+  },
+  {
+    "id": 84,
+    "number": 86,
+    "title": 85
+  },
+  {
+    "id": 89,
+    "number": 91,
+    "title": 90
+  },
+  {
+    "id": 94,
+    "number": 96,
+    "title": 95
+  },
+  {
+    "id": 100,
+    "number": 102,
+    "title": 101
+  },
+  {
+    "id": 105,
+    "number": 107,
+    "title": 106
+  },
+  {
+    "id": 110,
+    "number": 112,
+    "title": 111
+  },
+  {
+    "id": 116,
+    "number": 118,
+    "title": 117
+  },
+  {
+    "id": 121,
+    "number": 123,
+    "title": 122
+  },
+  {
+    "id": 126,
+    "number": 128,
+    "title": 127
+  },
+  {
+    "id": 131,
+    "number": 133,
+    "title": 132
+  },
+  {
+    "id": 137,
+    "number": 139,
+    "title": 138
+  },
+  {
+    "id": 142,
+    "number": 144,
+    "title": 143
+  },
+  {
+    "id": 148,
+    "number": 150,
+    "title": 149
+  },
+  {
+    "id": 153,
+    "number": 155,
+    "title": 154
+  },
+  {
+    "id": 158,
+    "number": 160,
+    "title": 159
+  },
+  {
+    "id": 164,
+    "number": 166,
+    "title": 165
+  },
+  {
+    "id": 169,
+    "number": 171,
+    "title": 170
+  },
+  {
+    "id": 174,
+    "number": 176,
+    "title": 175
+  },
+  {
+    "id": 180,
+    "number": 182,
+    "title": 181
+  },
+  {
+    "id": 185,
+    "number": 187,
+    "title": 186
+  },
+  {
+    "id": 191,
+    "number": 193,
+    "title": 192
+  },
+  {
+    "id": 196,
+    "number": 198,
+    "title": 197
+  },
+  {
+    "id": 201,
+    "number": 203,
+    "title": 202
+  },
+  {
+    "id": 206,
+    "number": 208,
+    "title": 207
+  },
+  {
+    "id": 212,
+    "number": 214,
+    "title": 213
+  },
+  {
+    "id": 218,
+    "number": 220,
+    "title": 219
+  },
+  {
+    "id": 223,
+    "number": 225,
+    "title": 224
+  },
+  {
+    "id": 228,
+    "number": 230,
+    "title": 229
+  },
+  {
+    "id": 233,
+    "number": 235,
+    "title": 234
+  },
+  {
+    "id": 238,
+    "number": 240,
+    "title": 239
+  },
+  {
+    "id": 243,
+    "number": 245,
+    "title": 244
+  },
+  {
+    "id": 248,
+    "number": 25,
+    "title": 249
+  },
+  0,
+  {
+    "_priority": 314,
+    "env": 318,
+    "name": 319,
+    "url": 320
+  },
+  {
+    "name": 315,
+    "env": 316,
+    "url": 317
+  },
+  -10,
+  -15,
+  -4,
+  "production",
+  "nuxt-app",
+  "https://acpc.wamd.fun/",
+  [
+    "Set",
+    322
+  ],
+  "$MCyCjazUD2",
+  [
+    "ShallowReactive",
+    324
+  ],
+  {
+    "$fGK8wsi3JP_N5KyKxONqYxc-1rnq6L7O4msIct_OfANA": -1,
+    "$fDR6G279BU6yQqe7WtqZwYBwSA3A3KnbI8Z7AZFZBRVM": -1
+  },
+  true,
+  "/comics/read/34843?chapter=1",
+  {
+    "common": 328,
+    "ads": 337
+  },
+  {
+    "adsList": 329,
+    "userInfo": 332,
+    "token": 334,
+    "baseImageDomain": 336
+  },
+  [
+    "Ref",
+    330
+  ],
+  [
+    "Reactive",
+    331
+  ],
+  [],
+  [
+    "EmptyRef",
+    333
+  ],
+  "null",
+  [
+    "EmptyRef",
+    335
+  ],
+  "\"\"",
+  [
+    "Ref",
+    7
+  ],
+  {
+    "activityUrl": 338,
+    "adStations": 339,
+    "adsRawMap": 342,
+    "adsManagers": 363,
+    "isViewBottomAd": 364,
+    "showWelfareBottomAd": 366
+  },
+  [
+    "EmptyRef",
+    335
+  ],
+  [
+    "Ref",
+    340
+  ],
+  [
+    "Reactive",
+    341
+  ],
+  [],
+  [
+    "Ref",
+    343
+  ],
+  [
+    "Reactive",
+    344
+  ],
+  {
+    "START": 345,
+    "NAV_ICON": 346,
+    "INDEX_POP_ICON": 347,
+    "START_POP_UP": 348,
+    "TOP_VERTICAL_BANNER": 349,
+    "TOP_BANNER": 350,
+    "PLAY_PAGE_THUMBNAIL": 351,
+    "INSERT_IMAGE": 352,
+    "LONG_VIDEO_PLAY_START": 353,
+    "ONE_COLUMN_WATERFALL_VERTICAL": 354,
+    "TWO_COLUMN_WATERFALL_VERTICAL": 355,
+    "THREE_COLUMN_WATERFALL_VERTICAL": 356,
+    "TEXT": 357,
+    "FLOATING_ICON_BOTTOM_RIGHT": 358,
+    "LONG_VIDEO_PAUSE": 359,
+    "INSERT_ICON": 360,
+    "COMMENT_TEXT": 361,
+    "FULL_SCREEN": 362
+  },
+  [],
+  [],
+  [],
+  [],
+  [],
+  [],
+  [],
+  [],
+  [],
+  [],
+  [],
+  [],
+  [],
+  [],
+  [],
+  [],
+  [],
+  [],
+  [
+    "EmptyRef",
+    333
+  ],
+  [
+    "EmptyRef",
+    365
+  ],
+  "false",
+  [
+    "Ref",
+    325
+  ]
+]

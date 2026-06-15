@@ -17,3 +17,5 @@ temp/
 .env
 *.zip
 .ipynb_checkpoints/
+DownloadTruyen/luutruyen/
+

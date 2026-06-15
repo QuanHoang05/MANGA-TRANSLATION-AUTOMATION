@@ -19,6 +19,9 @@ if __name__ == "__main__":
 
     # Lấy cổng mạng (port) từ cấu hình môi trường hoặc đặt mặc định là 8000
     port = int(os.environ.get("PORT", 8000))
-    print(f"Đang khởi động máy chủ dịch thuật tại cổng {port}...")
+    # Mặc định tắt reload khi chạy server để tránh việc ghi ảnh tạm làm khởi động lại server giữa chừng
+    reload = os.environ.get("RELOAD", "false").lower() == "true"
+    print(f"Đang khởi động máy chủ dịch thuật tại cổng {port} (Reload={reload})...")
     # Khởi chạy server uvicorn trỏ tới ứng dụng app trong thư mục app/main.py
-    uvicorn.run("app.main:app", host="0.0.0.0", port=port, reload=True)
+    uvicorn.run("app.main:app", host="0.0.0.0", port=port, reload=reload)
+
