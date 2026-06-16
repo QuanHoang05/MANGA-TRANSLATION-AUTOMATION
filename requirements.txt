@@ -11,6 +11,10 @@ pillow==10.3.0
 pydantic==2.7.4
 requests==2.32.3
 onnxruntime
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch
+torchvision
+simple-lama-inpainting
 
 
 

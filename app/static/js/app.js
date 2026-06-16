@@ -3,6 +3,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const apiKeyInput = document.getElementById("apiKey");
     const toggleApiVisibilityBtn = document.getElementById("toggleApiVisibility");
     const srcLangSelect = document.getElementById("srcLang");
+    const tgtLangSelect = document.getElementById("tgtLang");
     const translationToneSelect = document.getElementById("translationTone");
     const batchSizeInput = document.getElementById("batchSize");
     const batchSizeValue = document.getElementById("batchSizeValue");
@@ -24,6 +25,7 @@ document.addEventListener("DOMContentLoaded", () => {
     
     const consoleLogs = document.getElementById("consoleLogs");
     const btnDownload = document.getElementById("btnDownload");
+    const btnDownloadStitched = document.getElementById("btnDownloadStitched");
     
     const previewCard = document.getElementById("previewCard");
     const imgOriginal = document.getElementById("imgOriginal");
@@ -31,6 +33,20 @@ document.addEventListener("DOMContentLoaded", () => {
     const pageIndicator = document.getElementById("pageIndicator");
     const btnPrevPage = document.getElementById("btnPrevPage");
     const btnNextPage = document.getElementById("btnNextPage");
+    
+    // Tab controls & scrolling viewer elements
+    const btnTabComparison = document.getElementById("btnTabComparison");
+    const btnTabScroll = document.getElementById("btnTabScroll");
+    const btnTabManga = document.getElementById("btnTabManga");
+    const comparisonContainer = document.getElementById("comparisonContainer");
+    const scrollingContainer = document.getElementById("scrollingContainer");
+    const mangaPageContainer = document.getElementById("mangaPageContainer");
+    const imgMangaPage = document.getElementById("imgMangaPage");
+    const readingDirectionSelect = document.getElementById("readingDirection");
+    const btnMangaPrev = document.getElementById("btnMangaPrev");
+    const btnMangaNext = document.getElementById("btnMangaNext");
+    const pageControls = document.getElementById("pageControls");
+    const btnBackToTop = document.getElementById("btnBackToTop");
     
     // Tham chiếu các ô dữ liệu OCR và Bản dịch tùy chỉnh mới
     const ocrResultsBox = document.getElementById("ocrResultsBox");
@@ -193,12 +209,16 @@ document.addEventListener("DOMContentLoaded", () => {
         btnRemoveFile.disabled = true;
         apiKeyInput.disabled = true;
         srcLangSelect.disabled = true;
+        tgtLangSelect.disabled = true;
         translationToneSelect.disabled = true;
         batchSizeInput.disabled = true;
         additionalInstructionsInput.disabled = true;
         customTranslationBox.disabled = true;
         btnLoader.style.display = "inline-block";
         btnDownload.classList.add("disabled");
+        btnDownloadStitched.classList.add("disabled");
+        btnDownload.removeAttribute("href");
+        btnDownloadStitched.removeAttribute("href");
         previewCard.style.display = "none";
         
         // Cài đặt lại trạng thái các ô xem trước dữ liệu JSON
@@ -220,6 +240,7 @@ document.addEventListener("DOMContentLoaded", () => {
         });
         formData.append("api_key", apiKey);
         formData.append("src_lang", srcLangSelect.value);
+        formData.append("tgt_lang", tgtLangSelect.value);
         formData.append("tone", translationToneSelect.value);
         formData.append("batch_size_pages", batchSizeInput.value);
         formData.append("additional_instructions", additionalInstructionsInput.value.trim());
@@ -302,11 +323,25 @@ document.addEventListener("DOMContentLoaded", () => {
                 btnDownload.href = `/api/download/${jobId}`;
                 btnDownload.classList.remove("disabled");
                 
+                // Mở khóa cho phép tải xuống ảnh ghép dọc Webtoon
+                btnDownloadStitched.href = `/api/download-stitched/${jobId}`;
+                btnDownloadStitched.classList.remove("disabled");
+                
                 // Hiển thị phần so sánh hình ảnh trước/sau
                 if (data.images && data.images.length > 0) {
                     jobImages = data.images;
                     currentImageIndex = 0;
+                    
+                    // Tự động phát hiện nếu nguồn là tiếng Nhật thì đặt mặc định chiều đọc RTL
+                    if (data.src_lang === "japan" || data.src_lang === "jp") {
+                        readingDirectionSelect.value = "rtl";
+                    } else {
+                        readingDirectionSelect.value = "ltr";
+                    }
+                    
                     showImageComparison(jobId);
+                    // Tạo nội dung cho Scrolling Viewer
+                    buildScrollingViewer(jobId);
                 }
 
                 eventSource.close();
@@ -378,6 +413,7 @@ document.addEventListener("DOMContentLoaded", () => {
         btnRemoveFile.disabled = false;
         apiKeyInput.disabled = false;
         srcLangSelect.disabled = false;
+        tgtLangSelect.disabled = false;
         translationToneSelect.disabled = false;
         batchSizeInput.disabled = false;
         additionalInstructionsInput.disabled = false;
@@ -385,39 +421,94 @@ document.addEventListener("DOMContentLoaded", () => {
         btnLoader.style.display = "none";
     }
 
-    // 6. Quản lý tương tác của bảng so sánh ảnh trước/sau
+    // 6. Quản lý tương tác của bảng so sánh ảnh trước/sau và đọc trang Manga
     function showImageComparison(jobId) {
         previewCard.style.display = "block";
-        updatePageUrls(jobId);
+        updateActivePage();
     }
 
-    function updatePageUrls(jobId) {
+    function updateActivePage() {
         if (jobImages.length === 0) return;
+        const jobId = currentJobId;
         const currentFilename = jobImages[currentImageIndex];
         
         // Đường dẫn tương thích với FastAPI Static Files mount tại "/data"
         imgOriginal.src = `/data/jobs/${jobId}/temp/input/${currentFilename}`;
         imgTranslated.src = `/data/jobs/${jobId}/temp/output/${currentFilename}`;
+        imgMangaPage.src = `/data/jobs/${jobId}/temp/output/${currentFilename}`;
         
         pageIndicator.textContent = `Trang ${currentImageIndex + 1} / ${jobImages.length} (${currentFilename})`;
         
         // Vô hiệu hóa nút chuyển hướng nếu đạt tới giới hạn trang đầu/cuối
         btnPrevPage.disabled = currentImageIndex === 0;
         btnNextPage.disabled = currentImageIndex === jobImages.length - 1;
+        
+        updateMangaNavButtons();
+    }
+
+    function updateMangaNavButtons() {
+        const isRtl = readingDirectionSelect.value === "rtl";
+        if (isRtl) {
+            btnMangaPrev.textContent = "◀ Trang sau";
+            btnMangaPrev.disabled = currentImageIndex === jobImages.length - 1;
+            
+            btnMangaNext.textContent = "Trang trước ▶";
+            btnMangaNext.disabled = currentImageIndex === 0;
+        } else {
+            btnMangaPrev.textContent = "◀ Trang trước";
+            btnMangaPrev.disabled = currentImageIndex === 0;
+            
+            btnMangaNext.textContent = "Trang sau ▶";
+            btnMangaNext.disabled = currentImageIndex === jobImages.length - 1;
+        }
     }
 
     btnPrevPage.addEventListener("click", () => {
         if (currentImageIndex > 0) {
             currentImageIndex--;
-            updatePageUrls(currentJobId);
+            updateActivePage();
         }
     });
 
     btnNextPage.addEventListener("click", () => {
         if (currentImageIndex < jobImages.length - 1) {
             currentImageIndex++;
-            updatePageUrls(currentJobId);
+            updateActivePage();
         }
+    });
+
+    btnMangaPrev.addEventListener("click", () => {
+        const isRtl = readingDirectionSelect.value === "rtl";
+        if (isRtl) {
+            if (currentImageIndex < jobImages.length - 1) {
+                currentImageIndex++;
+                updateActivePage();
+            }
+        } else {
+            if (currentImageIndex > 0) {
+                currentImageIndex--;
+                updateActivePage();
+            }
+        }
+    });
+
+    btnMangaNext.addEventListener("click", () => {
+        const isRtl = readingDirectionSelect.value === "rtl";
+        if (isRtl) {
+            if (currentImageIndex > 0) {
+                currentImageIndex--;
+                updateActivePage();
+            }
+        } else {
+            if (currentImageIndex < jobImages.length - 1) {
+                currentImageIndex++;
+                updateActivePage();
+            }
+        }
+    });
+
+    readingDirectionSelect.addEventListener("change", () => {
+        updateMangaNavButtons();
     });
 
     // 7. Thiết lập tính năng tải xuống tệp JSON OCR
@@ -445,4 +536,143 @@ document.addEventListener("DOMContentLoaded", () => {
         link.click();
         document.body.removeChild(link);
     }
+
+    // 9. Xây dựng Trình đọc cuộn dọc (Webtoon Scrolling Mode)
+    function buildScrollingViewer(jobId) {
+        scrollingContainer.innerHTML = "";
+        if (jobImages.length === 0) return;
+        
+        jobImages.forEach((filename) => {
+            const wrapper = document.createElement("div");
+            wrapper.style.width = "100%";
+            wrapper.style.display = "flex";
+            wrapper.style.flexDirection = "column";
+            wrapper.style.alignItems = "center";
+            
+            const img = document.createElement("img");
+            img.src = `/data/jobs/${jobId}/temp/output/${filename}`;
+            img.alt = filename;
+            img.style.width = "100%";
+            img.style.maxWidth = "850px";
+            img.style.borderRadius = "8px";
+            img.style.boxShadow = "0 8px 24px rgba(0,0,0,0.4)";
+            img.style.display = "block";
+            img.style.marginBottom = "12px";
+            img.style.transition = "transform 0.3s ease";
+            
+            // Premium hover micro-interaction
+            img.addEventListener("mouseenter", () => {
+                img.style.transform = "scale(1.01)";
+            });
+            img.addEventListener("mouseleave", () => {
+                img.style.transform = "scale(1.0)";
+            });
+            
+            wrapper.appendChild(img);
+            scrollingContainer.appendChild(wrapper);
+        });
+    }
+
+    // 10. Chuyển đổi giữa Chế độ so sánh, Chế độ cuộn đọc và Chế độ đọc trang Manga
+    btnTabComparison.addEventListener("click", () => {
+        setTabActive(btnTabComparison);
+        setTabInactive(btnTabScroll);
+        setTabInactive(btnTabManga);
+        
+        comparisonContainer.style.display = "flex";
+        scrollingContainer.style.display = "none";
+        mangaPageContainer.style.display = "none";
+        pageControls.style.display = "flex";
+    });
+
+    btnTabScroll.addEventListener("click", () => {
+        setTabActive(btnTabScroll);
+        setTabInactive(btnTabComparison);
+        setTabInactive(btnTabManga);
+        
+        comparisonContainer.style.display = "none";
+        scrollingContainer.style.display = "flex";
+        mangaPageContainer.style.display = "none";
+        pageControls.style.display = "none";
+    });
+
+    btnTabManga.addEventListener("click", () => {
+        setTabActive(btnTabManga);
+        setTabInactive(btnTabComparison);
+        setTabInactive(btnTabScroll);
+        
+        comparisonContainer.style.display = "none";
+        scrollingContainer.style.display = "none";
+        mangaPageContainer.style.display = "flex";
+        pageControls.style.display = "none";
+        
+        updateActivePage();
+    });
+
+    function setTabActive(btn) {
+        btn.classList.add("active");
+        btn.style.background = "var(--primary)";
+        btn.style.color = "#fff";
+    }
+
+    function setTabInactive(btn) {
+        btn.classList.remove("active");
+        btn.style.background = "transparent";
+        btn.style.color = "var(--text-secondary)";
+    }
+
+    // 11. Xử lý nút float Quay về đầu trang khi cuộn
+    scrollingContainer.addEventListener("scroll", () => {
+        if (scrollingContainer.scrollTop > 300) {
+            btnBackToTop.style.display = "flex";
+        } else {
+            btnBackToTop.style.display = "none";
+        }
+    });
+
+    btnBackToTop.addEventListener("click", () => {
+        scrollingContainer.scrollTo({
+            top: 0,
+            behavior: "smooth"
+        });
+    });
+
+    // 12. Hỗ trợ phím mũi tên lật trang
+    document.addEventListener("keydown", (e) => {
+        if (!previewCard || previewCard.style.display === "none") return;
+        
+        const activeElem = document.activeElement;
+        if (activeElem && (activeElem.tagName === "INPUT" || activeElem.tagName === "TEXTAREA" || activeElem.tagName === "SELECT")) {
+            return;
+        }
+        
+        const inMangaTab = mangaPageContainer.style.display === "flex";
+        const isRtl = readingDirectionSelect.value === "rtl";
+        
+        if (e.key === "ArrowLeft") {
+            if (inMangaTab && isRtl) {
+                if (currentImageIndex < jobImages.length - 1) {
+                    currentImageIndex++;
+                    updateActivePage();
+                }
+            } else {
+                if (currentImageIndex > 0) {
+                    currentImageIndex--;
+                    updateActivePage();
+                }
+            }
+        } else if (e.key === "ArrowRight") {
+            if (inMangaTab && isRtl) {
+                if (currentImageIndex > 0) {
+                    currentImageIndex--;
+                    updateActivePage();
+                }
+            } else {
+                if (currentImageIndex < jobImages.length - 1) {
+                    currentImageIndex++;
+                    updateActivePage();
+                }
+            }
+        }
+    });
 });

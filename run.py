@@ -23,5 +23,6 @@ if __name__ == "__main__":
     reload = os.environ.get("RELOAD", "false").lower() == "true"
     print(f"Đang khởi động máy chủ dịch thuật tại cổng {port} (Reload={reload})...")
     # Khởi chạy server uvicorn trỏ tới ứng dụng app trong thư mục app/main.py
-    uvicorn.run("app.main:app", host="0.0.0.0", port=port, reload=reload)
+    # Sử dụng reload_dirs=["app"] để uvicorn chỉ theo dõi thay đổi trong thư mục app/ và tránh việc tự động khởi động lại khi ghi tệp tạm vào thư mục data/
+    uvicorn.run("app.main:app", host="0.0.0.0", port=port, reload=reload, reload_dirs=["app"] if reload else None)
 

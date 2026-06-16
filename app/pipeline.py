@@ -64,9 +64,10 @@ def get_ocr(lang):
 
 
 class MangaPipeline:
-    def __init__(self, api_key: str, src_lang: str = "en", tone: str = "tự nhiên", batch_size_pages: int = 10, additional_instructions: str = "", status_callback=None, custom_translation: str = "", use_yolo: bool = False):
+    def __init__(self, api_key: str, src_lang: str = "en", tgt_lang: str = "vi", tone: str = "tự nhiên", batch_size_pages: int = 10, additional_instructions: str = "", status_callback=None, custom_translation: str = "", use_yolo: bool = False):
         self.api_key = api_key
         self.src_lang = src_lang
+        self.tgt_lang = tgt_lang
         self.tone = tone
         self.batch_size_pages = batch_size_pages
         self.additional_instructions = additional_instructions
@@ -326,6 +327,20 @@ class MangaPipeline:
                 
             # Cắt ảnh
             slice_img = mega_img.crop((0, y, w_common, slice_y))
+            
+            # Tự động phóng to ảnh lên chiều rộng tối thiểu 1600px để PaddleOCR quét dễ hơn, tránh mất chữ nhỏ
+            w_slice, h_slice = slice_img.size
+            if w_slice < 1600:
+                ratio = 1600.0 / w_slice
+                new_w = 1600
+                new_h = int(h_slice * ratio)
+                slice_img = slice_img.resize((new_w, new_h), Image.Resampling.LANCZOS)
+                from PIL import ImageFilter
+                slice_img = slice_img.filter(ImageFilter.UnsharpMask(radius=1.5, percent=150, threshold=3))
+            else:
+                # Nếu ảnh đã lớn, vẫn làm nét nhẹ bằng UnsharpMask để tăng chất lượng chữ
+                from PIL import ImageFilter
+                slice_img = slice_img.filter(ImageFilter.UnsharpMask(radius=1.0, percent=100, threshold=3))
             
             part_name = f"{part_idx:03d}_slice.png"
             part_path = os.path.join(output_folder, part_name)
@@ -863,12 +878,6 @@ class MangaPipeline:
         """
         Gửi một cụm thoại lên Gemini API và nhận ánh xạ dịch thuật có cấu trúc (ID - Bản dịch).
         """
-        # Chuẩn bị dữ liệu JSON gửi đi
-        batch_payload = {
-            "context": "Đây là danh sách các câu thoại trong truyện tranh cần dịch sang tiếng Việt. Hãy đảm bảo xưng hô đồng bộ, tự nhiên, bám sát mạch truyện.",
-            "items": items
-        }
-        
         # Chuẩn hóa mã ngôn ngữ gốc hiển thị
         lang_map = {
             "ko": "tiếng Hàn",
@@ -882,8 +891,29 @@ class MangaPipeline:
         }
         lang_name = lang_map.get(self.src_lang.lower(), self.src_lang)
 
+        # Chuẩn hóa mã ngôn ngữ dịch hiển thị
+        tgt_lang_map = {
+            "vi": "tiếng Việt",
+            "vietnamese": "tiếng Việt",
+            "en": "tiếng Anh",
+            "english": "tiếng Anh",
+            "ch": "tiếng Trung",
+            "chinese": "tiếng Trung",
+            "japan": "tiếng Nhật",
+            "japanese": "tiếng Nhật",
+            "ko": "tiếng Hàn",
+            "korean": "tiếng Hàn"
+        }
+        tgt_lang_name = tgt_lang_map.get(self.tgt_lang.lower(), self.tgt_lang)
+
+        # Chuẩn bị dữ liệu JSON gửi đi
+        batch_payload = {
+            "context": f"Đây là danh sách các câu thoại trong truyện tranh cần dịch sang {tgt_lang_name}. Hãy đảm bảo xưng hô đồng bộ, tự nhiên, bám sát mạch truyện.",
+            "items": items
+        }
+
         prompt = f"""
-Bạn là một dịch giả truyện tranh (manga/webtoon) chuyên nghiệp. Hãy dịch các câu thoại từ ngôn ngữ {lang_name} sang tiếng Việt.
+Bạn là một dịch giả truyện tranh (manga/webtoon) chuyên nghiệp. Hãy dịch các câu thoại từ ngôn ngữ {lang_name} sang {tgt_lang_name}.
 
 HƯỚNG DẪN XƯNG HÔ & PHONG CÁCH:
 - Đảm bảo xưng hô đồng bộ, tự nhiên và phù hợp với ngữ cảnh của câu chuyện (ví dụ: Ta - Ngươi, Thiếu chủ - Đại nhân, Tôi - Cậu, Anh - Em, Tỷ tỷ - Muội muội...).
@@ -1150,9 +1180,17 @@ Hãy dịch toàn bộ danh sách trên và trả về kết quả dưới đị
                 resized_images.append(img)
                 
         stitched_img = np.vstack(resized_images)
-        stitched_path = os.path.join(temp_dir, "translated_stitched.jpg")
+        h_total = stitched_img.shape[0]
         
-        # Lưu chất lượng JPEG cao (95)
+        # Kiểm tra giới hạn chiều cao tối đa của định dạng JPEG (65535px)
+        if h_total > 65535:
+            stitched_path = os.path.join(temp_dir, "translated_stitched.png")
+            cv2.imwrite(stitched_path, stitched_img)
+            self.log(f"HỆ THỐNG: Ảnh ghép dọc quá dài ({h_total}px > 65535px). Đã lưu dưới dạng PNG: translated_stitched.png", 92.0)
+        else:
+            stitched_path = os.path.join(temp_dir, "translated_stitched.jpg")
+            cv2.imwrite(stitched_path, stitched_img, [int(cv2.IMWRITE_JPEG_QUALITY), 95])
+            self.log(f"HỆ THỐNG: Đã ghép dọc thành công thành một ảnh duy nhất: {os.path.basename(stitched_path)} ({h_total}px)", 92.0)
     def detect_image_language(self, img_path: str) -> str:
         """
         Dùng model OCR 'ch' để đọc thử 1 ảnh, quét các ký tự để đoán ngôn ngữ.

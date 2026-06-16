@@ -54,6 +54,7 @@ def run_job_in_background(
     zip_path: str, 
     api_key: str, 
     src_lang: str, 
+    tgt_lang: str,
     tone: str, 
     batch_size_pages: int,
     additional_instructions: str = "",
@@ -81,6 +82,7 @@ def run_job_in_background(
         pipeline = MangaPipeline(
             api_key=api_key,
             src_lang=src_lang,
+            tgt_lang=tgt_lang,
             tone=tone,
             batch_size_pages=batch_size_pages,
             additional_instructions=additional_instructions,
@@ -102,6 +104,7 @@ def run_job_in_background(
                     
         jobs[job_id]["images"] = processed_images
         jobs[job_id]["output_zip"] = output_zip_path
+        jobs[job_id]["src_lang"] = pipeline.src_lang
         jobs[job_id]["status"] = "completed"
         
     except Exception as e:
@@ -136,6 +139,7 @@ async def upload_files(
     files: list[UploadFile] = File(...),
     api_key: Optional[str] = Form(""),
     src_lang: str = Form("en"),
+    tgt_lang: str = Form("vi"),
     tone: str = Form("tự nhiên"),
     batch_size_pages: int = Form(10),
     additional_instructions: str = Form(""),
@@ -201,7 +205,9 @@ async def upload_files(
         "output_zip": None,
         "images": [],
         "ocr_results": None,
-        "translated_results": None
+        "translated_results": None,
+        "src_lang": src_lang,
+        "tgt_lang": tgt_lang
     }
     
     # Kích hoạt tác vụ dịch chạy ngầm thông qua BackgroundTasks của FastAPI
@@ -211,6 +217,7 @@ async def upload_files(
         pipeline_input_path,
         api_key,
         src_lang,
+        tgt_lang,
         tone,
         batch_size_pages,
         additional_instructions,
@@ -231,6 +238,7 @@ async def stream_progress(job_id: str):
             return
             
         last_log_idx = 0
+        sent_final_state = False
         while True:
             job = jobs.get(job_id)
             if not job:
@@ -246,13 +254,31 @@ async def stream_progress(job_id: str):
                         "log": job["logs"][idx],
                         "images": job["images"] if job["status"] == "completed" else [],
                         "ocr_results": job.get("ocr_results"),
-                        "translated_results": job.get("translated_results")
+                        "translated_results": job.get("translated_results"),
+                        "src_lang": job.get("src_lang"),
+                        "tgt_lang": job.get("tgt_lang")
                     }
                     import json
                     yield f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
+                    if data["status"] in ("completed", "failed"):
+                        sent_final_state = True
                 last_log_idx = logs_count
                 
             if job["status"] in ("completed", "failed"):
+                if not sent_final_state:
+                    data = {
+                        "status": job["status"],
+                        "progress": job["progress"],
+                        "log": None,
+                        "images": job["images"] if job["status"] == "completed" else [],
+                        "ocr_results": job.get("ocr_results"),
+                        "translated_results": job.get("translated_results"),
+                        "src_lang": job.get("src_lang"),
+                        "tgt_lang": job.get("tgt_lang")
+                    }
+                    import json
+                    yield f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
+                    sent_final_state = True
                 break
                 
             await asyncio.sleep(0.3)
@@ -274,3 +300,28 @@ async def download_translated(job_id: str):
         filename="manga_translated.zip",
         media_type="application/zip"
     )
+
+
+@app.get("/api/download-stitched/{job_id}")
+async def download_stitched(job_id: str):
+    """
+    Cho phép tải về ảnh ghép dọc duy nhất (Webtoon stitched image),
+    hỗ trợ cả định dạng JPEG (.jpg) và PNG (.png).
+    """
+    if job_id not in jobs:
+        # Nếu khởi động lại server mất bộ nhớ trong cache nhưng file vẫn tồn tại trên đĩa, vẫn cho phép tải
+        pass
+        
+    job_dir = os.path.join(JOBS_DIR, job_id)
+    temp_dir = os.path.join(job_dir, "temp")
+    
+    jpg_path = os.path.join(temp_dir, "translated_stitched.jpg")
+    png_path = os.path.join(temp_dir, "translated_stitched.png")
+    
+    if os.path.exists(jpg_path):
+        return FileResponse(path=jpg_path, filename="manga_translated_stitched.jpg", media_type="image/jpeg")
+    elif os.path.exists(png_path):
+        return FileResponse(path=png_path, filename="manga_translated_stitched.png", media_type="image/png")
+    else:
+        raise HTTPException(status_code=404, detail="Không tìm thấy tệp ảnh ghép dọc. Vui lòng chạy lại tiến trình.")
+
