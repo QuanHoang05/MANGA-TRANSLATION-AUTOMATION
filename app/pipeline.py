@@ -143,14 +143,15 @@ class MangaPipeline:
     def log(self, message: str, percent: float, event_type: str = None, data = None):
         if self.status_callback:
             try:
-                self.status_callback(message, percent, event_type, data)
+                return self.status_callback(message, percent, event_type, data)
             except TypeError:
                 try:
-                    self.status_callback(message, percent)
+                    return self.status_callback(message, percent)
                 except Exception:
                     pass
         else:
             print(f"[{percent:.1f}%] {message}")
+        return None
 
     def group_ocr_boxes(self, ocr_items: list, lang: str) -> list:
         """
@@ -642,6 +643,30 @@ class MangaPipeline:
                     "text": item["original_text"]
                 })
         self.log("Đã hoàn thành quét OCR toàn bộ các trang.", 45.0, event_type="ocr_completed", data=ocr_results_list)
+        
+        # Nếu không có API Key và không có bản dịch tùy chỉnh, hệ thống sẽ tạm dừng tiến trình để chờ người dùng cung cấp bản dịch
+        if not self.api_key and not self.custom_translation_map:
+            user_translation_json = self.log(
+                "HỆ THỐNG: Không có API Key và bản dịch. Tạm dừng tiến trình để chờ bạn cung cấp bản dịch JSON...", 
+                45.0, 
+                event_type="paused"
+            )
+            if user_translation_json:
+                try:
+                    data = json.loads(user_translation_json)
+                    if isinstance(data, dict):
+                        if "translations" in data and isinstance(data["translations"], list):
+                            for item in data["translations"]:
+                                if isinstance(item, dict) and "id" in item and "translated_text" in item:
+                                    self.custom_translation_map[item["id"]] = item["translated_text"]
+                        else:
+                            self.custom_translation_map = data
+                    elif isinstance(data, list):
+                        for item in data:
+                            if isinstance(item, dict) and "id" in item and "translated_text" in item:
+                                self.custom_translation_map[item["id"]] = item["translated_text"]
+                except Exception as pe:
+                    self.log(f"LỖI HỆ THỐNG: Không thể phân tích cú pháp bản dịch JSON nhận được: {pe}", 45.0)
         
         # Bước 3: Dịch thuật ngữ cảnh thông qua API Gemini (Context-Aware Translation)
         self.log("BƯỚC 3: Dịch thuật gộp qua API Gemini Studio...", 45.0)

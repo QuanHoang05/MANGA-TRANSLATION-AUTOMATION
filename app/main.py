@@ -3,6 +3,7 @@ import uuid
 import asyncio
 import shutil
 import traceback
+import threading
 from typing import Optional
 from fastapi import FastAPI, UploadFile, File, Form, BackgroundTasks, HTTPException
 from fastapi.responses import StreamingResponse, FileResponse, HTMLResponse
@@ -77,6 +78,16 @@ def run_job_in_background(
             jobs[job_id]["ocr_results"] = data
         elif event_type == "translation_completed":
             jobs[job_id]["translated_results"] = data
+        elif event_type == "paused":
+            jobs[job_id]["status"] = "paused"
+            event = jobs[job_id].get("resume_event")
+            if event:
+                event.wait()
+                event.clear()
+                # Sau khi được giải phóng, đổi trạng thái về processing và trả về bản dịch mới nhận được
+                jobs[job_id]["status"] = "processing"
+                return jobs[job_id].get("custom_translation_input", "")
+        return None
         
     try:
         pipeline = MangaPipeline(
@@ -207,7 +218,8 @@ async def upload_files(
         "ocr_results": None,
         "translated_results": None,
         "src_lang": src_lang,
-        "tgt_lang": tgt_lang
+        "tgt_lang": tgt_lang,
+        "resume_event": threading.Event()
     }
     
     # Kích hoạt tác vụ dịch chạy ngầm thông qua BackgroundTasks của FastAPI
@@ -286,7 +298,23 @@ async def stream_progress(job_id: str):
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 
-@app.get("/api/download/{job_id}")
+@app.post("/api/continue/{job_id}")
+async def continue_job(job_id: str, custom_translation: Optional[str] = Form("")):
+    """
+    Tiếp nhận bản dịch JSON tự dịch từ người dùng và giải phóng sự kiện block để tiếp tục tiến trình dịch.
+    """
+    if job_id not in jobs:
+        raise HTTPException(status_code=404, detail="Không tìm thấy phiên làm việc.")
+        
+    # Lưu bản dịch mới
+    jobs[job_id]["custom_translation_input"] = custom_translation
+    
+    # Kích hoạt sự kiện để tiếp tục
+    event = jobs[job_id].get("resume_event")
+    if event:
+        event.set()
+        
+    return {"status": "resumed"}
 async def download_translated(job_id: str):
     """
     Cho phép tải về tệp ZIP chứa toàn bộ các ảnh truyện tranh kết quả đã được dịch và vẽ chữ hoàn chỉnh.

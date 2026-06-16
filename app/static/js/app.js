@@ -17,6 +17,8 @@ document.addEventListener("DOMContentLoaded", () => {
     const btnRemoveFile = document.getElementById("btnRemoveFile");
     const btnStartPipeline = document.getElementById("btnStartPipeline");
     const btnLoader = document.getElementById("btnLoader");
+    const btnContinuePipeline = document.getElementById("btnContinuePipeline");
+    const btnContinueLoader = document.getElementById("btnContinueLoader");
     
     const statusBadge = document.getElementById("statusBadge");
     const progressPercent = document.getElementById("progressPercent");
@@ -270,6 +272,39 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     });
 
+    btnContinuePipeline.addEventListener("click", async () => {
+        if (!currentJobId) return;
+        const customTranslation = customTranslationBox.value.trim();
+        
+        btnContinuePipeline.disabled = true;
+        btnContinueLoader.style.display = "inline-block";
+        customTranslationBox.disabled = true;
+        
+        addLogLine("HỆ THỐNG: Đang gửi bản dịch lên máy chủ để tiếp tục...");
+        
+        const formData = new FormData();
+        formData.append("custom_translation", customTranslation);
+        
+        try {
+            const response = await fetch(`/api/continue/${currentJobId}`, {
+                method: "POST",
+                body: formData
+            });
+            
+            if (!response.ok) {
+                const err = await response.json();
+                throw new Error(err.detail || "Không thể tiếp tục.");
+            }
+            
+            addLogLine("HỆ THỐNG: Gửi bản dịch thành công. Đang tiếp tục tiến trình...");
+        } catch (error) {
+            addLogLine(`LỖI TIẾP TỤC: ${error.message}`, "error-msg");
+            btnContinuePipeline.disabled = false;
+            btnContinueLoader.style.display = "none";
+            customTranslationBox.disabled = false;
+        }
+    });
+
     function connectProgressSSE(jobId) {
         if (eventSource) {
             eventSource.close();
@@ -345,17 +380,28 @@ document.addEventListener("DOMContentLoaded", () => {
                 }
 
                 eventSource.close();
+                btnContinuePipeline.style.display = "none";
                 unlockUI();
+            } else if (data.status === "paused") {
+                statusBadge.textContent = "TẠM DỪNG";
+                statusBadge.className = "status-badge state-paused";
+                progressLabel.textContent = "Tiến trình tạm dừng. Vui lòng nhập bản dịch JSON rồi nhấn 'Tiếp tục'.";
+                customTranslationBox.disabled = false;
+                btnContinuePipeline.style.display = "inline-block";
+                btnContinuePipeline.disabled = false;
+                btnContinueLoader.style.display = "none";
             } else if (data.status === "failed") {
                 statusBadge.textContent = "THẤT BẠI";
                 statusBadge.className = "status-badge state-failed";
                 progressLabel.textContent = "Tiến trình bị gián đoạn do lỗi.";
+                btnContinuePipeline.style.display = "none";
                 eventSource.close();
                 unlockUI();
             } else {
                 statusBadge.textContent = "ĐANG XỬ LÝ";
                 statusBadge.className = "status-badge state-processing";
                 progressLabel.textContent = "Đang phân tích và dịch...";
+                btnContinuePipeline.style.display = "none";
             }
         };
 
@@ -419,6 +465,8 @@ document.addEventListener("DOMContentLoaded", () => {
         additionalInstructionsInput.disabled = false;
         customTranslationBox.disabled = false;
         btnLoader.style.display = "none";
+        btnContinuePipeline.style.display = "none";
+        btnContinueLoader.style.display = "none";
     }
 
     // 6. Quản lý tương tác của bảng so sánh ảnh trước/sau và đọc trang Manga
@@ -546,27 +594,19 @@ document.addEventListener("DOMContentLoaded", () => {
             const wrapper = document.createElement("div");
             wrapper.style.width = "100%";
             wrapper.style.display = "flex";
-            wrapper.style.flexDirection = "column";
-            wrapper.style.alignItems = "center";
+            wrapper.style.justifyContent = "center";
+            wrapper.style.background = "#0d0f17";
             
             const img = document.createElement("img");
             img.src = `/data/jobs/${jobId}/temp/output/${filename}`;
             img.alt = filename;
             img.style.width = "100%";
-            img.style.maxWidth = "850px";
-            img.style.borderRadius = "8px";
-            img.style.boxShadow = "0 8px 24px rgba(0,0,0,0.4)";
+            img.style.maxWidth = "800px";
             img.style.display = "block";
-            img.style.marginBottom = "12px";
-            img.style.transition = "transform 0.3s ease";
-            
-            // Premium hover micro-interaction
-            img.addEventListener("mouseenter", () => {
-                img.style.transform = "scale(1.01)";
-            });
-            img.addEventListener("mouseleave", () => {
-                img.style.transform = "scale(1.0)";
-            });
+            img.style.margin = "0";
+            img.style.padding = "0";
+            img.style.borderRadius = "0";
+            img.style.boxShadow = "none";
             
             wrapper.appendChild(img);
             scrollingContainer.appendChild(wrapper);

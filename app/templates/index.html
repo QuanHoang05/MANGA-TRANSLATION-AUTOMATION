@@ -124,6 +124,10 @@
                         <span>Bắt Đầu Dịch Tự Động</span>
                         <div class="loader-ring" id="btnLoader" style="display: none;"></div>
                     </button>
+                    <button type="button" id="btnContinuePipeline" class="btn-primary" style="display: none; background: var(--success-gradient); margin-top: 10px;">
+                        <span>Tiếp Tục Dịch (Đã có JSON)</span>
+                        <div class="loader-ring" id="btnContinueLoader" style="display: none;"></div>
+                    </button>
                 </div>
                 
             </section>
@@ -255,7 +259,7 @@
                     </div>
 
                     <!-- Webtoon Scrolling Mode Container -->
-                    <div class="scrolling-container" id="scrollingContainer" style="display: none; flex-direction: column; gap: 15px; align-items: center; max-height: 80vh; overflow-y: auto; padding: 15px; background: rgba(10, 11, 16, 0.5); border-radius: var(--radius-md); border: 1px solid rgba(255, 255, 255, 0.05); scroll-behavior: smooth; margin-top: 15px;">
+                    <div class="scrolling-container" id="scrollingContainer" style="display: none; flex-direction: column; gap: 0; align-items: center; max-height: 80vh; overflow-y: auto; padding: 0; background: rgba(10, 11, 16, 0.5); border-radius: var(--radius-md); border: 1px solid rgba(255, 255, 255, 0.05); scroll-behavior: smooth; margin-top: 15px;">
                         <!-- Images will be dynamically inserted here -->
                     </div>
 
