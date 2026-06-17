@@ -45,7 +45,8 @@ def get_ocr(lang):
                 use_textline_orientation=True, 
                 lang=lang, 
                 device=device,
-                enable_mkldnn=False
+                enable_mkldnn=False,
+                cpu_threads=2
             )
         except Exception as e:
             print(f"Không thể khởi tạo bằng tham số PaddleOCR 3.x+ ({str(e)}). Thử bằng tham số PaddleOCR 2.x...")
@@ -55,7 +56,8 @@ def get_ocr(lang):
                     use_angle_cls=True, 
                     lang=lang, 
                     show_log=False, 
-                    use_gpu=use_gpu
+                    use_gpu=use_gpu,
+                    cpu_threads=2
                 )
             except Exception as e2:
                 print(f"Lỗi khi khởi tạo PaddleOCR 2.x: {str(e2)}")
@@ -355,6 +357,31 @@ class MangaPipeline:
             
         return slice_paths
 
+    def apply_adaptive_padding(self, bbox, img_w, img_h):
+        """
+        Cộng thêm padding 10%-15% cho 4 phía của bounding box nếu box nhỏ hoặc mảnh,
+        nhằm tránh tràn chữ khi vẽ. Nếu định vị to thì không cần cộng thêm.
+        """
+        x0, y0, x2, y2 = bbox
+        w = x2 - x0
+        h = y2 - y0
+        
+        # Nếu box rất nhỏ hoặc mảnh (dài nhưng dẹt)
+        if w < 250 or h < 120:
+            pad_w = int(w * 0.12)
+            pad_h = int(h * 0.12)
+            
+            # Cấu hình cận dưới và cận trên cho padding
+            pad_w = max(4, min(25, pad_w))
+            pad_h = max(4, min(25, pad_h))
+            
+            x0 = max(0, x0 - pad_w)
+            y0 = max(0, y0 - pad_h)
+            x2 = min(img_w, x2 + pad_w)
+            y2 = min(img_h, y2 + pad_h)
+            
+        return [int(x0), int(y0), int(x2), int(y2)]
+
     def max_inscribed_rectangle(self, mask_binary) -> tuple:
         """
         Tìm hình chữ nhật có diện tích lớn nhất nằm hoàn toàn trong mặt nạ nhị phân.
@@ -567,7 +594,7 @@ class MangaPipeline:
         from paddleocr import PaddleOCR
         lang_map = {"en": "en", "japan": "japan", "korean": "korean", "ch": "ch"}
         ocr_lang = lang_map.get(self.src_lang, "en")
-        ocr_model = PaddleOCR(use_angle_cls=True, lang=ocr_lang, enable_mkldnn=False, det_limit_side_len=3000, det_limit_type='max', drop_score=0.3)
+        ocr_model = PaddleOCR(use_angle_cls=True, lang=ocr_lang, enable_mkldnn=False, det_limit_side_len=3000, det_limit_type='max', drop_score=0.3, cpu_threads=2)
         
         ocr_data = {}  # Cấu trúc: {đường_dẫn_ảnh: [ {id, text, box_points, bbox} ]}
         total_images = len(images)
@@ -633,6 +660,13 @@ class MangaPipeline:
             except Exception as e:
                 self.log(f"Lỗi khi quét OCR ảnh {img_name}: {str(e)}", 15.0 + (idx / total_images) * 25.0)
                 ocr_data[img_path] = []
+            finally:
+                raw_result = None
+                result = None
+                grouped_items = None
+                img_ocr_items = None
+                import gc
+                gc.collect()
                 
         # Trích xuất dữ liệu OCR thô dạng danh sách để hiển thị trên giao diện và tải về
         ocr_results_list = []
@@ -772,7 +806,11 @@ class MangaPipeline:
                         if not t_text or t_text == item["original_text"]:
                             continue
                             
-                        # Chạy thuật toán tìm contour bong bóng và hình chữ nhật nội tiếp lớn nhất (nếu bật YOLOv8 / Bubble Detection)
+                        # Chạy thuật toán tìm contour bong bóng và hình chữ nhật nội tiếp lớn nhất
+                        is_bubble = False
+                        best_rect = item["bbox"]
+                        bg_color = (255, 255, 255)
+                        
                         if self.use_yolo:
                             matched_yolo_box = None
                             ocr_x0, ocr_y0, ocr_x2, ocr_y2 = item["bbox"]
@@ -788,12 +826,14 @@ class MangaPipeline:
                                 is_bubble = True
                                 best_rect = [matched_yolo_box[0]+2, matched_yolo_box[1]+2, matched_yolo_box[2]-2, matched_yolo_box[3]-2]
                                 bg_color = (255, 255, 255)
-                            else:
-                                is_bubble, bubble_cnt, best_rect, bg_color = self.find_bubble_contour_and_rect(cv2_img, item["bbox"])
-                        else:
-                            is_bubble = True
-                            best_rect = item["bbox"]
-                            bg_color = (255, 255, 255)
+                                
+                        if not is_bubble:
+                            # Nếu không dùng YOLO hoặc YOLO không khớp, tự động phân tích contours để phân loại bong bóng vs chữ tự do (SFX)
+                            is_bubble, bubble_cnt, best_rect, bg_color = self.find_bubble_contour_and_rect(cv2_img, item["bbox"])
+                            
+                        # Áp dụng padding thích ứng cho hộp vẽ chữ mới (luôn dùng original OCR bbox để đảm bảo căn giữa chuẩn xác)
+                        H_img, W_img = cv2_img.shape[:2]
+                        padded_rect = self.apply_adaptive_padding(item["bbox"], W_img, H_img)
                         
                         if is_bubble:
                             # Nhánh 1: Tô đè màu đơn sắc của bong bóng thoại (Local Color Padding)
@@ -806,18 +846,18 @@ class MangaPipeline:
                             cv2_img[sub_mask == 255] = bg_color
                             
                             typeset_info[item["id"]] = {
-                                "bbox": best_rect,
+                                "bbox": padded_rect,
                                 "is_sfx": False
                             }
                         else:
-                            # Nhánh 2: Chữ tự do/SFX lơ lửng -> Gom vào mask để chạy Inpaint nâng cao
+                            # Nhánh 2: Chữ tự do/SFX lơ lửng -> Gom vào mask để chạy Inpaint nâng cao bằng mô hình LaMa
                             for poly in item["box_points"]:
                                 pts = np.array(poly, dtype=np.int32)
                                 cv2.fillPoly(sfx_mask, [pts], 255)
                             has_sfx = True
                             
                             typeset_info[item["id"]] = {
-                                "bbox": item["bbox"], # SFX giữ nguyên box cũ
+                                "bbox": padded_rect,
                                 "is_sfx": True
                             }
                             
@@ -830,19 +870,53 @@ class MangaPipeline:
                         try:
                             # Import động SimpleLama
                             from simple_lama_inpainting import SimpleLama
+                            import torch
+                            
+                            # Monkey patch torch.jit.load để ép CPU map_location và giới hạn CPU threads
+                            if not hasattr(torch.jit, "_patched_for_lama"):
+                                import torch
+                                torch.set_num_threads(2)
+                                torch.set_num_interop_threads(2)
+                                orig_jit_load = torch.jit.load
+                                def patched_jit_load(f, map_location=None, *args, **kwargs):
+                                    return orig_jit_load(f, map_location="cpu", *args, **kwargs)
+                                torch.jit.load = patched_jit_load
+                                torch.jit._patched_for_lama = True
+                                
                             if not hasattr(self, "_lama_instance"):
                                 self.log("Đang khởi tạo mô hình AI LaMa-ONNX cho SFX...", 72.0)
-                                self._lama_instance = SimpleLama()
+                                self._lama_instance = SimpleLama("cpu")
                             lama = self._lama_instance
                         except Exception as le:
                             print(f"Cảnh báo: Không dùng được LaMa-ONNX ({le}). Sử dụng OpenCV Inpaint làm dự phòng.")
                             
                         if lama is not None:
-                            # LaMa nhận PIL Image và PIL Mask
-                            pil_img_temp = Image.fromarray(cv2.cvtColor(cv2_img, cv2.COLOR_BGR2RGB))
-                            pil_mask_temp = Image.fromarray(sfx_mask)
-                            inpainted_pil = lama(pil_img_temp, pil_mask_temp)
-                            cv2_img = cv2.cvtColor(np.array(inpainted_pil), cv2.COLOR_RGB2BGR)
+                            # Inpaint cục bộ (crop-based) để tăng tốc độ gấp 50-100 lần và tiết kiệm RAM
+                            contours, _ = cv2.findContours(sfx_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+                            for cnt in contours:
+                                x, y, w, h = cv2.boundingRect(cnt)
+                                pad = 15
+                                xmin = max(0, x - pad)
+                                ymin = max(0, y - pad)
+                                xmax = min(cv2_img.shape[1], x + w + pad)
+                                ymax = min(cv2_img.shape[0], y + h + pad)
+                                
+                                if (xmax - xmin) > 0 and (ymax - ymin) > 0:
+                                    crop_img = cv2_img[ymin:ymax, xmin:xmax]
+                                    crop_mask = sfx_mask[ymin:ymax, xmin:xmax]
+                                    
+                                    pil_crop_img = Image.fromarray(cv2.cvtColor(crop_img, cv2.COLOR_BGR2RGB))
+                                    pil_crop_mask = Image.fromarray(crop_mask)
+                                    
+                                    inpainted_crop_pil = lama(pil_crop_img, pil_crop_mask)
+                                    inpainted_crop_cv = cv2.cvtColor(np.array(inpainted_crop_pil), cv2.COLOR_RGB2BGR)
+                                    
+                                    # Khớp chính xác kích thước vùng crop gốc (để chống lỗi lệch hình dạng do LaMa tự làm tròn kích thước thành bội số của 8)
+                                    h_crop, w_crop = crop_img.shape[:2]
+                                    if inpainted_crop_cv.shape[0] != h_crop or inpainted_crop_cv.shape[1] != w_crop:
+                                        inpainted_crop_cv = cv2.resize(inpainted_crop_cv, (w_crop, h_crop), interpolation=cv2.INTER_LANCZOS4)
+                                    
+                                    cv2_img[ymin:ymax, xmin:xmax] = inpainted_crop_cv
                         else:
                             # OpenCV Inpaint
                             cv2_img = cv2.inpaint(cv2_img, sfx_mask, inpaintRadius=8, flags=cv2.INPAINT_TELEA)
@@ -882,6 +956,14 @@ class MangaPipeline:
                 traceback.print_exc()
                 # Nếu xử lý thất bại, copy ảnh gốc sang thư mục đầu ra để làm phương án dự phòng
                 shutil.copy(img_path, os.path.join(output_folder, img_name))
+            finally:
+                # Giải phóng hoàn toàn bộ nhớ của các biến cục bộ
+                cv2_img = None
+                pil_img = None
+                sfx_mask = None
+                sub_mask = None
+                import gc
+                gc.collect()
                 
         # Bước 5: Ghép nối ảnh và chuẩn bị đầu ra (Stitch & Archive)
         self.log("BƯỚC 5: Nén file kết quả và chuẩn bị tải về...", 90.0)
@@ -1081,8 +1163,8 @@ Hãy dịch toàn bộ danh sách trên và trả về kết quả dưới đị
         optimal_lines = []
         optimal_line_heights = []
         
-        # Thử nghiệm giảm kích thước font chữ từ 28 xuống 6 (Clamp tối đa 28, tối thiểu 6)
-        for font_size in range(28, 5, -2):
+        # Thử nghiệm giảm kích thước font chữ từ 38 xuống 6 (Clamp tối đa 38, tối thiểu 6)
+        for font_size in range(38, 5, -2):
             try:
                 if font_path == "Arial":
                     font = ImageFont.load_default()
@@ -1113,7 +1195,7 @@ Hãy dịch toàn bộ danh sách trên và trả về kết quả dưới đị
                 optimal_line_heights = line_heights
                 break
                 
-        # Nếu không có kích cỡ nào vừa khít trong khoảng [6, 28], ép cứng kích thước font tối thiểu là 6 (Clamp)
+        # Nếu không có kích cỡ nào vừa khít trong khoảng [6, 38], ép cứng kích thước font tối thiểu là 6 (Clamp)
         if optimal_font is None:
             try:
                 if font_path == "Arial":
