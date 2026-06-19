@@ -3,6 +3,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const apiKeyInput = document.getElementById("apiKey");
     const toggleApiVisibilityBtn = document.getElementById("toggleApiVisibility");
     const srcLangSelect = document.getElementById("srcLang");
+    const tgtLangSelect = document.getElementById("tgtLang");
     const translationToneSelect = document.getElementById("translationTone");
     const batchSizeInput = document.getElementById("batchSize");
     const batchSizeValue = document.getElementById("batchSizeValue");
@@ -16,6 +17,8 @@ document.addEventListener("DOMContentLoaded", () => {
     const btnRemoveFile = document.getElementById("btnRemoveFile");
     const btnStartPipeline = document.getElementById("btnStartPipeline");
     const btnLoader = document.getElementById("btnLoader");
+    const btnContinuePipeline = document.getElementById("btnContinuePipeline");
+    const btnContinueLoader = document.getElementById("btnContinueLoader");
     
     const statusBadge = document.getElementById("statusBadge");
     const progressPercent = document.getElementById("progressPercent");
@@ -24,6 +27,7 @@ document.addEventListener("DOMContentLoaded", () => {
     
     const consoleLogs = document.getElementById("consoleLogs");
     const btnDownload = document.getElementById("btnDownload");
+    const btnDownloadStitched = document.getElementById("btnDownloadStitched");
     
     const previewCard = document.getElementById("previewCard");
     const imgOriginal = document.getElementById("imgOriginal");
@@ -31,6 +35,20 @@ document.addEventListener("DOMContentLoaded", () => {
     const pageIndicator = document.getElementById("pageIndicator");
     const btnPrevPage = document.getElementById("btnPrevPage");
     const btnNextPage = document.getElementById("btnNextPage");
+    
+    // Tab controls & scrolling viewer elements
+    const btnTabComparison = document.getElementById("btnTabComparison");
+    const btnTabScroll = document.getElementById("btnTabScroll");
+    const btnTabManga = document.getElementById("btnTabManga");
+    const comparisonContainer = document.getElementById("comparisonContainer");
+    const scrollingContainer = document.getElementById("scrollingContainer");
+    const mangaPageContainer = document.getElementById("mangaPageContainer");
+    const imgMangaPage = document.getElementById("imgMangaPage");
+    const readingDirectionSelect = document.getElementById("readingDirection");
+    const btnMangaPrev = document.getElementById("btnMangaPrev");
+    const btnMangaNext = document.getElementById("btnMangaNext");
+    const pageControls = document.getElementById("pageControls");
+    const btnBackToTop = document.getElementById("btnBackToTop");
     
     // Tham chiếu các ô dữ liệu OCR và Bản dịch tùy chỉnh mới
     const ocrResultsBox = document.getElementById("ocrResultsBox");
@@ -161,7 +179,46 @@ document.addEventListener("DOMContentLoaded", () => {
         dropzone.querySelector(".dropzone-content").style.display = "flex";
         selectedFileInfo.style.display = "none";
         btnStartPipeline.disabled = true;
-        addLogLine("Đã hủy bỏ file đã chọn.");
+        addLogLine("Đã hủy bỏ file đã chọn. Dữ liệu phiên làm việc đã được xóa sạch.");
+
+        // Reset toàn bộ trạng thái job cũ
+        if (eventSource) {
+            eventSource.close();
+            eventSource = null;
+        }
+        currentJobId = null;
+        jobImages = [];
+        currentImageIndex = 0;
+
+        // Reset tiến trình & log
+        progressPercent.textContent = "0%";
+        progressFill.style.width = "0%";
+        progressLabel.textContent = "Chưa khởi chạy";
+        statusBadge.textContent = "SẴN SÀNG";
+        statusBadge.className = "status-badge state-idle";
+        consoleLogs.innerHTML = "";
+        addLogLine("Hệ thống sẵn sàng. Vui lòng tải file lên để bắt đầu.");
+
+        // Reset nút tải xuống
+        btnDownload.classList.add("disabled");
+        btnDownloadStitched.classList.add("disabled");
+        btnDownload.removeAttribute("href");
+        btnDownloadStitched.removeAttribute("href");
+
+        // Reset OCR & bản dịch
+        ocrResultsBox.value = "";
+        btnDownloadOcr.disabled = true;
+        btnDownloadTranslation.disabled = true;
+
+        // Ẩn preview
+        previewCard.style.display = "none";
+
+        // Reset step tracker
+        document.querySelectorAll(".step-item").forEach(item => {
+            item.classList.remove("active", "done");
+        });
+
+        unlockUI();
     }
 
     // 4. Hàm bổ trợ in dòng logs console của hệ thống
@@ -193,12 +250,16 @@ document.addEventListener("DOMContentLoaded", () => {
         btnRemoveFile.disabled = true;
         apiKeyInput.disabled = true;
         srcLangSelect.disabled = true;
+        tgtLangSelect.disabled = true;
         translationToneSelect.disabled = true;
         batchSizeInput.disabled = true;
         additionalInstructionsInput.disabled = true;
         customTranslationBox.disabled = true;
         btnLoader.style.display = "inline-block";
         btnDownload.classList.add("disabled");
+        btnDownloadStitched.classList.add("disabled");
+        btnDownload.removeAttribute("href");
+        btnDownloadStitched.removeAttribute("href");
         previewCard.style.display = "none";
         
         // Cài đặt lại trạng thái các ô xem trước dữ liệu JSON
@@ -220,6 +281,7 @@ document.addEventListener("DOMContentLoaded", () => {
         });
         formData.append("api_key", apiKey);
         formData.append("src_lang", srcLangSelect.value);
+        formData.append("tgt_lang", tgtLangSelect.value);
         formData.append("tone", translationToneSelect.value);
         formData.append("batch_size_pages", batchSizeInput.value);
         formData.append("additional_instructions", additionalInstructionsInput.value.trim());
@@ -246,6 +308,39 @@ document.addEventListener("DOMContentLoaded", () => {
         } catch (error) {
             addLogLine(`LỖI KHỞI CHẠY: ${error.message}`, "error-msg");
             unlockUI();
+        }
+    });
+
+    btnContinuePipeline.addEventListener("click", async () => {
+        if (!currentJobId) return;
+        const customTranslation = customTranslationBox.value.trim();
+        
+        btnContinuePipeline.disabled = true;
+        btnContinueLoader.style.display = "inline-block";
+        customTranslationBox.disabled = true;
+        
+        addLogLine("HỆ THỐNG: Đang gửi bản dịch lên máy chủ để tiếp tục...");
+        
+        const formData = new FormData();
+        formData.append("custom_translation", customTranslation);
+        
+        try {
+            const response = await fetch(`/api/continue/${currentJobId}`, {
+                method: "POST",
+                body: formData
+            });
+            
+            if (!response.ok) {
+                const err = await response.json();
+                throw new Error(err.detail || "Không thể tiếp tục.");
+            }
+            
+            addLogLine("HỆ THỐNG: Gửi bản dịch thành công. Đang tiếp tục tiến trình...");
+        } catch (error) {
+            addLogLine(`LỖI TIẾP TỤC: ${error.message}`, "error-msg");
+            btnContinuePipeline.disabled = false;
+            btnContinueLoader.style.display = "none";
+            customTranslationBox.disabled = false;
         }
     });
 
@@ -298,29 +393,54 @@ document.addEventListener("DOMContentLoaded", () => {
                 statusBadge.className = "status-badge state-completed";
                 progressLabel.textContent = "Hoàn thành toàn bộ quy trình dịch!";
                 
-                // Mở khóa cho phép tải xuống tệp tin dịch hoàn chỉnh
+                // Mở khóa tải xuống
                 btnDownload.href = `/api/download/${jobId}`;
                 btnDownload.classList.remove("disabled");
+                btnDownloadStitched.href = `/api/download-stitched/${jobId}`;
+                btnDownloadStitched.classList.remove("disabled");
                 
                 // Hiển thị phần so sánh hình ảnh trước/sau
                 if (data.images && data.images.length > 0) {
                     jobImages = data.images;
                     currentImageIndex = 0;
+                    if (data.src_lang === "japan" || data.src_lang === "jp") {
+                        readingDirectionSelect.value = "rtl";
+                    } else {
+                        readingDirectionSelect.value = "ltr";
+                    }
                     showImageComparison(jobId);
+                    buildScrollingViewer(jobId);
                 }
 
                 eventSource.close();
+                btnContinuePipeline.style.display = "none";
                 unlockUI();
+
+                // ── Tự động reset giao diện sau 3 giây để chuẩn bị cho lượt dịch tiếp theo ──
+                // (Giữ nguyên API Key và Prompt phụ, reset phần còn lại)
+                setTimeout(() => {
+                    autoResetAfterComplete();
+                }, 3000);
+            } else if (data.status === "paused") {
+                statusBadge.textContent = "TẠM DỪNG";
+                statusBadge.className = "status-badge state-paused";
+                progressLabel.textContent = "Tiến trình tạm dừng. Vui lòng nhập bản dịch JSON rồi nhấn 'Tiếp tục'.";
+                customTranslationBox.disabled = false;
+                btnContinuePipeline.style.display = "inline-block";
+                btnContinuePipeline.disabled = false;
+                btnContinueLoader.style.display = "none";
             } else if (data.status === "failed") {
                 statusBadge.textContent = "THẤT BẠI";
                 statusBadge.className = "status-badge state-failed";
                 progressLabel.textContent = "Tiến trình bị gián đoạn do lỗi.";
+                btnContinuePipeline.style.display = "none";
                 eventSource.close();
                 unlockUI();
             } else {
                 statusBadge.textContent = "ĐANG XỬ LÝ";
                 statusBadge.className = "status-badge state-processing";
                 progressLabel.textContent = "Đang phân tích và dịch...";
+                btnContinuePipeline.style.display = "none";
             }
         };
 
@@ -378,46 +498,165 @@ document.addEventListener("DOMContentLoaded", () => {
         btnRemoveFile.disabled = false;
         apiKeyInput.disabled = false;
         srcLangSelect.disabled = false;
+        tgtLangSelect.disabled = false;
         translationToneSelect.disabled = false;
         batchSizeInput.disabled = false;
         additionalInstructionsInput.disabled = false;
         customTranslationBox.disabled = false;
         btnLoader.style.display = "none";
+        btnContinuePipeline.style.display = "none";
+        btnContinueLoader.style.display = "none";
     }
 
-    // 6. Quản lý tương tác của bảng so sánh ảnh trước/sau
+    /**
+     * Reset giao diện về trạng thái ban đầu sau khi hoàn thành 1 lượt dịch.
+     * Giữ nguyên: API Key, Prompt phụ (additionalInstructions).
+     * Reset tất cả phần còn lại.
+     */
+    function autoResetAfterComplete() {
+        // Lưu lại giá trị cần giữ
+        const savedApiKey = apiKeyInput.value;
+        const savedInstructions = additionalInstructionsInput.value;
+
+        // Reset file upload
+        selectedFiles = [];
+        fileInput.value = "";
+        dropzone.querySelector(".dropzone-content").style.display = "flex";
+        selectedFileInfo.style.display = "none";
+        btnStartPipeline.disabled = true;
+
+        // Reset job state
+        if (eventSource) { eventSource.close(); eventSource = null; }
+        currentJobId = null;
+        jobImages = [];
+        currentImageIndex = 0;
+
+        // Reset tiến trình
+        progressPercent.textContent = "0%";
+        progressFill.style.width = "0%";
+        progressLabel.textContent = "Chưa khởi chạy";
+        statusBadge.textContent = "SẴN SÀNG";
+        statusBadge.className = "status-badge state-idle";
+
+        // Reset console log
+        consoleLogs.innerHTML = "";
+        addLogLine("✅ Đã hoàn thành! Giao diện đã được reset. Tải file mới để bắt đầu lượt dịch tiếp theo.", "system-msg");
+
+        // Reset nút download
+        btnDownload.classList.add("disabled");
+        btnDownloadStitched.classList.add("disabled");
+        btnDownload.removeAttribute("href");
+        btnDownloadStitched.removeAttribute("href");
+
+        // Reset OCR & bản dịch
+        ocrResultsBox.value = "";
+        customTranslationBox.value = "";
+        btnDownloadOcr.disabled = true;
+        btnDownloadTranslation.disabled = true;
+
+        // Ẩn preview
+        previewCard.style.display = "none";
+
+        // Reset step tracker
+        document.querySelectorAll(".step-item").forEach(item => {
+            item.classList.remove("active", "done");
+        });
+
+        // Khôi phục giá trị đã lưu
+        apiKeyInput.value = savedApiKey;
+        additionalInstructionsInput.value = savedInstructions;
+
+        unlockUI();
+    }
+
+    // 6. Quản lý tương tác của bảng so sánh ảnh trước/sau và đọc trang Manga
     function showImageComparison(jobId) {
         previewCard.style.display = "block";
-        updatePageUrls(jobId);
+        updateActivePage();
     }
 
-    function updatePageUrls(jobId) {
+    function updateActivePage() {
         if (jobImages.length === 0) return;
+        const jobId = currentJobId;
         const currentFilename = jobImages[currentImageIndex];
         
         // Đường dẫn tương thích với FastAPI Static Files mount tại "/data"
         imgOriginal.src = `/data/jobs/${jobId}/temp/input/${currentFilename}`;
         imgTranslated.src = `/data/jobs/${jobId}/temp/output/${currentFilename}`;
+        imgMangaPage.src = `/data/jobs/${jobId}/temp/output/${currentFilename}`;
         
         pageIndicator.textContent = `Trang ${currentImageIndex + 1} / ${jobImages.length} (${currentFilename})`;
         
         // Vô hiệu hóa nút chuyển hướng nếu đạt tới giới hạn trang đầu/cuối
         btnPrevPage.disabled = currentImageIndex === 0;
         btnNextPage.disabled = currentImageIndex === jobImages.length - 1;
+        
+        updateMangaNavButtons();
+    }
+
+    function updateMangaNavButtons() {
+        const isRtl = readingDirectionSelect.value === "rtl";
+        if (isRtl) {
+            btnMangaPrev.textContent = "◀ Trang sau";
+            btnMangaPrev.disabled = currentImageIndex === jobImages.length - 1;
+            
+            btnMangaNext.textContent = "Trang trước ▶";
+            btnMangaNext.disabled = currentImageIndex === 0;
+        } else {
+            btnMangaPrev.textContent = "◀ Trang trước";
+            btnMangaPrev.disabled = currentImageIndex === 0;
+            
+            btnMangaNext.textContent = "Trang sau ▶";
+            btnMangaNext.disabled = currentImageIndex === jobImages.length - 1;
+        }
     }
 
     btnPrevPage.addEventListener("click", () => {
         if (currentImageIndex > 0) {
             currentImageIndex--;
-            updatePageUrls(currentJobId);
+            updateActivePage();
         }
     });
 
     btnNextPage.addEventListener("click", () => {
         if (currentImageIndex < jobImages.length - 1) {
             currentImageIndex++;
-            updatePageUrls(currentJobId);
+            updateActivePage();
         }
+    });
+
+    btnMangaPrev.addEventListener("click", () => {
+        const isRtl = readingDirectionSelect.value === "rtl";
+        if (isRtl) {
+            if (currentImageIndex < jobImages.length - 1) {
+                currentImageIndex++;
+                updateActivePage();
+            }
+        } else {
+            if (currentImageIndex > 0) {
+                currentImageIndex--;
+                updateActivePage();
+            }
+        }
+    });
+
+    btnMangaNext.addEventListener("click", () => {
+        const isRtl = readingDirectionSelect.value === "rtl";
+        if (isRtl) {
+            if (currentImageIndex > 0) {
+                currentImageIndex--;
+                updateActivePage();
+            }
+        } else {
+            if (currentImageIndex < jobImages.length - 1) {
+                currentImageIndex++;
+                updateActivePage();
+            }
+        }
+    });
+
+    readingDirectionSelect.addEventListener("change", () => {
+        updateMangaNavButtons();
     });
 
     // 7. Thiết lập tính năng tải xuống tệp JSON OCR
@@ -445,4 +684,135 @@ document.addEventListener("DOMContentLoaded", () => {
         link.click();
         document.body.removeChild(link);
     }
+
+    // 9. Xây dựng Trình đọc cuộn dọc (Webtoon Scrolling Mode)
+    function buildScrollingViewer(jobId) {
+        scrollingContainer.innerHTML = "";
+        if (jobImages.length === 0) return;
+        
+        jobImages.forEach((filename) => {
+            const wrapper = document.createElement("div");
+            wrapper.style.width = "100%";
+            wrapper.style.display = "flex";
+            wrapper.style.justifyContent = "center";
+            wrapper.style.background = "#0d0f17";
+            
+            const img = document.createElement("img");
+            img.src = `/data/jobs/${jobId}/temp/output/${filename}`;
+            img.alt = filename;
+            img.style.width = "100%";
+            img.style.maxWidth = "800px";
+            img.style.display = "block";
+            img.style.margin = "0";
+            img.style.padding = "0";
+            img.style.borderRadius = "0";
+            img.style.boxShadow = "none";
+            
+            wrapper.appendChild(img);
+            scrollingContainer.appendChild(wrapper);
+        });
+    }
+
+    // 10. Chuyển đổi giữa Chế độ so sánh, Chế độ cuộn đọc và Chế độ đọc trang Manga
+    btnTabComparison.addEventListener("click", () => {
+        setTabActive(btnTabComparison);
+        setTabInactive(btnTabScroll);
+        setTabInactive(btnTabManga);
+        
+        comparisonContainer.style.display = "flex";
+        scrollingContainer.style.display = "none";
+        mangaPageContainer.style.display = "none";
+        pageControls.style.display = "flex";
+    });
+
+    btnTabScroll.addEventListener("click", () => {
+        setTabActive(btnTabScroll);
+        setTabInactive(btnTabComparison);
+        setTabInactive(btnTabManga);
+        
+        comparisonContainer.style.display = "none";
+        scrollingContainer.style.display = "flex";
+        mangaPageContainer.style.display = "none";
+        pageControls.style.display = "none";
+    });
+
+    btnTabManga.addEventListener("click", () => {
+        setTabActive(btnTabManga);
+        setTabInactive(btnTabComparison);
+        setTabInactive(btnTabScroll);
+        
+        comparisonContainer.style.display = "none";
+        scrollingContainer.style.display = "none";
+        mangaPageContainer.style.display = "flex";
+        pageControls.style.display = "none";
+        
+        updateActivePage();
+    });
+
+    function setTabActive(btn) {
+        btn.classList.add("active");
+        btn.style.background = "var(--primary)";
+        btn.style.color = "#fff";
+    }
+
+    function setTabInactive(btn) {
+        btn.classList.remove("active");
+        btn.style.background = "transparent";
+        btn.style.color = "var(--text-secondary)";
+    }
+
+    // 11. Xử lý nút float Quay về đầu trang khi cuộn
+    scrollingContainer.addEventListener("scroll", () => {
+        if (scrollingContainer.scrollTop > 300) {
+            btnBackToTop.style.display = "flex";
+        } else {
+            btnBackToTop.style.display = "none";
+        }
+    });
+
+    btnBackToTop.addEventListener("click", () => {
+        scrollingContainer.scrollTo({
+            top: 0,
+            behavior: "smooth"
+        });
+    });
+
+    // 12. Hỗ trợ phím mũi tên lật trang
+    document.addEventListener("keydown", (e) => {
+        if (!previewCard || previewCard.style.display === "none") return;
+        
+        const activeElem = document.activeElement;
+        if (activeElem && (activeElem.tagName === "INPUT" || activeElem.tagName === "TEXTAREA" || activeElem.tagName === "SELECT")) {
+            return;
+        }
+        
+        const inMangaTab = mangaPageContainer.style.display === "flex";
+        const isRtl = readingDirectionSelect.value === "rtl";
+        
+        if (e.key === "ArrowLeft") {
+            if (inMangaTab && isRtl) {
+                if (currentImageIndex < jobImages.length - 1) {
+                    currentImageIndex++;
+                    updateActivePage();
+                }
+            } else {
+                if (currentImageIndex > 0) {
+                    currentImageIndex--;
+                    updateActivePage();
+                }
+            }
+        } else if (e.key === "ArrowRight") {
+            if (inMangaTab && isRtl) {
+                if (currentImageIndex > 0) {
+                    currentImageIndex--;
+                    updateActivePage();
+                }
+            } else {
+                if (currentImageIndex < jobImages.length - 1) {
+                    currentImageIndex++;
+                    updateActivePage();
+                }
+            }
+        }
+    });
 });

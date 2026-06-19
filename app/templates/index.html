@@ -24,7 +24,7 @@
                 <img src="https://img.icons8.com/color/96/manga.png" alt="Manga Icon" class="app-logo">
                 <div class="logo-text">
                     <h1>Manga Translation</h1>
-                    <span class="badge">Automation Pipeline v1.0</span>
+                    <span class="badge">Automation Pipeline v2.0</span>
                 </div>
             </div>
             <p class="subtitle">Hệ thống dịch thuật truyện tranh tự động bằng AI, giữ nguyên bố cục và xóa chữ thông minh</p>
@@ -49,24 +49,36 @@
                         <small class="help-text">Nhập API key miễn phí của bạn. Key được lưu bảo mật ở trình duyệt của bạn (LocalStorage).</small>
                     </div>
 
-                    <div class="row-inputs">
-                        <div class="input-group half">
-                            <label for="srcLang">Ngôn Ngữ OCR Gốc</label>
-                            <select id="srcLang">
-                                <option value="en">Tiếng Anh (English)</option>
-                                <option value="ch">Tiếng Trung (Chinese)</option>
-                                <option value="japan">Tiếng Nhật (Japanese)</option>
-                                <option value="ko">Tiếng Hàn (Korean)</option>
+                    <div class="row-inputs" style="flex-wrap: wrap; gap: 10px;">
+                        <div class="input-group" style="flex: 1; min-width: 120px; margin-bottom: 1rem;">
+                            <label for="srcLang">Ngôn Ngữ Gốc</label>
+                            <select id="srcLang" style="padding: 0.65rem 0.8rem; font-size: 0.88rem;">
+                                <option value="auto">Tự động (Auto)</option>
+                                <option value="en">Tiếng Anh (EN)</option>
+                                <option value="ch">Tiếng Trung (ZH)</option>
+                                <option value="japan">Tiếng Nhật (JA)</option>
+                                <option value="ko">Tiếng Hàn (KO)</option>
                             </select>
                         </div>
 
-                        <div class="input-group half">
+                        <div class="input-group" style="flex: 1; min-width: 120px; margin-bottom: 1rem;">
+                            <label for="tgtLang">Ngôn Ngữ Dịch</label>
+                            <select id="tgtLang" style="padding: 0.65rem 0.8rem; font-size: 0.88rem;">
+                                <option value="vi">Tiếng Việt (VI)</option>
+                                <option value="en">Tiếng Anh (EN)</option>
+                                <option value="ch">Tiếng Trung (ZH)</option>
+                                <option value="japan">Tiếng Nhật (JA)</option>
+                                <option value="ko">Tiếng Hàn (KO)</option>
+                            </select>
+                        </div>
+
+                        <div class="input-group" style="flex: 1; min-width: 120px; margin-bottom: 1rem;">
                             <label for="translationTone">Văn Phong Dịch</label>
-                            <select id="translationTone">
-                                <option value="tự nhiên">Tự nhiên (Mặc định)</option>
-                                <option value="cổ trang">Cổ trang (Ta - Ngươi, Thiếu chủ...)</option>
-                                <option value="dễ thương">Cute / Đáng yêu</option>
-                                <option value="lịch sự">Lịch sự / Trang trọng</option>
+                            <select id="translationTone" style="padding: 0.65rem 0.8rem; font-size: 0.88rem;">
+                                <option value="tự nhiên">Tự nhiên</option>
+                                <option value="cổ trang">Cổ trang</option>
+                                <option value="dễ thương">Đáng yêu</option>
+                                <option value="lịch sự">Lịch sự</option>
                             </select>
                         </div>
                     </div>
@@ -111,6 +123,10 @@
                     <button type="button" id="btnStartPipeline" class="btn-primary" disabled>
                         <span>Bắt Đầu Dịch Tự Động</span>
                         <div class="loader-ring" id="btnLoader" style="display: none;"></div>
+                    </button>
+                    <button type="button" id="btnContinuePipeline" class="btn-primary" style="display: none; background: var(--success-gradient); margin-top: 10px;">
+                        <span>Tiếp Tục Dịch (Đã có JSON)</span>
+                        <div class="loader-ring" id="btnContinueLoader" style="display: none;"></div>
                     </button>
                 </div>
                 
@@ -175,9 +191,12 @@
                     </div>
 
                     <!-- Download Trigger -->
-                    <div class="download-container">
-                        <a href="#" id="btnDownload" class="btn-success disabled">
-                            <span>📥 Tải Xuống File Đã Dịch Sạch Sẽ</span>
+                    <div class="download-container" style="display: flex; gap: 15px; flex-wrap: wrap;">
+                        <a href="#" id="btnDownload" class="btn-success disabled" style="flex: 1; min-width: 200px;">
+                            <span>📦 Tải File ZIP Các Trang Lẻ</span>
+                        </a>
+                        <a href="#" id="btnDownloadStitched" class="btn-success disabled" style="flex: 1; min-width: 200px; background: var(--accent-gradient);">
+                            <span>🖼️ Tải Ảnh Ghép Dọc (Webtoon)</span>
                         </a>
                     </div>
                 </div>
@@ -206,16 +225,25 @@
 
                 <!-- Preview Card (Visible after complete) -->
                 <div class="glass-card preview-card" id="previewCard" style="display: none; margin-top: 20px;">
-                    <div class="preview-header">
-                        <h2><i class="icon-eye"></i> So Sánh Kết Quả Trước & Sau</h2>
-                        <div class="page-controls">
+                    <div class="preview-header" style="display: flex; flex-wrap: wrap; gap: 15px; align-items: center;">
+                        <h2><i class="icon-eye"></i> Xem Kết Quả Dịch</h2>
+                        
+                        <!-- Tab Switcher -->
+                        <div class="tab-switcher" style="display: flex; background: rgba(0,0,0,0.3); padding: 4px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.08); margin-right: auto; margin-left: 10px;">
+                            <button type="button" class="tab-btn active" id="btnTabComparison" style="background: var(--primary); color: #fff; border: none; padding: 6px 16px; border-radius: 6px; font-weight: 600; font-size: 13px; cursor: pointer; transition: all 0.2s;">⚖️ So Sánh Trước/Sau</button>
+                            <button type="button" class="tab-btn" id="btnTabScroll" style="background: transparent; color: var(--text-secondary); border: none; padding: 6px 16px; border-radius: 6px; font-weight: 600; font-size: 13px; cursor: pointer; transition: all 0.2s; margin-left: 5px;">📜 Đọc Cuộn (Webtoon)</button>
+                            <button type="button" class="tab-btn" id="btnTabManga" style="background: transparent; color: var(--text-secondary); border: none; padding: 6px 16px; border-radius: 6px; font-weight: 600; font-size: 13px; cursor: pointer; transition: all 0.2s; margin-left: 5px;">📖 Đọc Trang (Manga)</button>
+                        </div>
+
+                        <div class="page-controls" id="pageControls">
                             <button type="button" class="btn-nav" id="btnPrevPage">◀</button>
                             <span class="page-indicator" id="pageIndicator">Trang 1 / 1</span>
                             <button type="button" class="btn-nav" id="btnNextPage">▶</button>
                         </div>
                     </div>
                     
-                    <div class="comparison-container">
+                    <!-- Comparison Container -->
+                    <div class="comparison-container" id="comparisonContainer">
                         <div class="comparison-half">
                             <h4>ẢNH GỐC (OCR)</h4>
                             <div class="img-wrapper">
@@ -229,17 +257,46 @@
                             </div>
                         </div>
                     </div>
+
+                    <!-- Webtoon Scrolling Mode Container -->
+                    <div class="scrolling-container" id="scrollingContainer" style="display: none; flex-direction: column; gap: 0; align-items: center; max-height: 80vh; overflow-y: auto; padding: 0; background: rgba(10, 11, 16, 0.5); border-radius: var(--radius-md); border: 1px solid rgba(255, 255, 255, 0.05); scroll-behavior: smooth; margin-top: 15px;">
+                        <!-- Images will be dynamically inserted here -->
+                    </div>
+
+                    <!-- Manga Page Reader Container -->
+                    <div class="manga-page-container" id="mangaPageContainer" style="display: none; flex-direction: column; align-items: center; justify-content: center; gap: 15px; padding: 15px; background: rgba(10, 11, 16, 0.5); border-radius: var(--radius-md); border: 1px solid rgba(255, 255, 255, 0.05); margin-top: 15px;">
+                        <!-- Controls for page direction and quick navigation -->
+                        <div class="manga-controls" style="display: flex; gap: 15px; align-items: center; justify-content: space-between; width: 100%; max-width: 600px; padding: 10px; background: rgba(0,0,0,0.2); border-radius: 8px; border: 1px solid rgba(255,255,255,0.05);">
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                <label for="readingDirection" style="font-size: 13px; font-weight: 500; color: var(--text-secondary);">Chiều đọc:</label>
+                                <select id="readingDirection" style="padding: 4px 8px; font-size: 12px; background: rgba(10, 10, 10, 0.6); width: auto; min-width: 140px; border: 1px solid rgba(255,255,255,0.1);">
+                                    <option value="ltr">Trái sang Phải (LTR)</option>
+                                    <option value="rtl">Phải sang Trái (RTL)</option>
+                                </select>
+                            </div>
+                            <div style="display: flex; gap: 8px;">
+                                <button type="button" class="btn-primary" id="btnMangaPrev" style="padding: 6px 12px; font-size: 13px; width: auto; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); box-shadow: none;">◀ Trang trước</button>
+                                <button type="button" class="btn-primary" id="btnMangaNext" style="padding: 6px 12px; font-size: 13px; width: auto; background: var(--primary);">Trang sau ▶</button>
+                            </div>
+                        </div>
+                        
+                        <!-- Page Image Display -->
+                        <div class="manga-img-wrapper" style="width: 100%; display: flex; justify-content: center; background: #0d0f17; border-radius: var(--radius-md); padding: 10px; border: 1px solid rgba(255, 255, 255, 0.08); max-height: 80vh; overflow: hidden;">
+                            <img src="" id="imgMangaPage" alt="Manga Page" style="max-width: 100%; max-height: 75vh; object-fit: contain; border-radius: 4px; transition: transform 0.2s;">
+                        </div>
+                    </div>
                 </div>
 
             </section>
             
         </main>
         
-        <footer class="app-footer">
-            <p>© 2026 DeepMind Antigravity. Phát triển tối ưu hóa xử lý gộp cho Google Colab & Docker.</p>
-        </footer>
+
     </div>
     
+    <!-- Back to Top Button -->
+    <button type="button" id="btnBackToTop" style="position: fixed; bottom: 30px; right: 30px; width: 48px; height: 48px; border-radius: 50%; background: var(--accent-gradient); color: white; border: 1px solid rgba(255,255,255,0.1); font-size: 20px; cursor: pointer; display: none; align-items: center; justify-content: center; z-index: 999; box-shadow: 0 4px 15px rgba(168, 85, 247, 0.4); transition: all 0.3s ease;">▲</button>
+
     <!-- JS Logic -->
     <script src="/static/js/app.js?v=2"></script>
 </body>
