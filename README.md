@@ -1,100 +1,176 @@
-# Manga Translation Automation Pipeline 🚀
+# Manga Translation Automation Pipeline v2.0 🚀
 
-Hệ thống dịch thuật truyện tranh tự động bằng AI, thực hiện qua 5 bước tối ưu hóa: giải nén, quét chữ OCR (PaddleOCR), dịch thuật gộp ngữ cảnh bằng mô hình **Gemini 1.5 Flash API** (Structured JSON Output), tẩy xóa chữ cũ bằng **OpenCV Inpainting**, và tự động căn chỉnh vẽ chữ tiếng Việt mới (Pillow Text Wrapping & Auto-scaling).
-
----
-
-## 🛠️ Quy Trình 5 Bước Hoạt Động (Workflow)
-
-1. **Thu Thập & Giải Nén (Input Ingestion)**: Giải nén tệp ZIP chứa các trang ảnh truyện tranh (được sắp xếp theo thứ tự ví dụ `001.png`, `002.jpg`...).
-2. **Quét Chữ AI (OCR Extraction)**: Sử dụng mô hình **PaddleOCR** quét qua toàn bộ ảnh, bóc tách tọa độ polygon và nội dung chữ gốc. Gán mã định danh ID duy nhất cho từng ô thoại theo định dạng `[TênẢnh-SốThứTự]`.
-3. **Dịch Thuật Gộp (Context-Aware Translation)**: Gộp các câu thoại theo cụm trang ảnh (mặc định 10 trang) kèm Prompt hướng dẫn xưng hô. Gửi một request duy nhất lên **Google AI Studio (Gemini Flash)** để giữ tính đồng bộ nhân vật (ví dụ: Ta - Ngươi, Thiếu chủ - Đại nhân...). API được cấu hình bắt buộc trả về định dạng **JSON có cấu trúc**.
-4. **Xử Lý Đồ Họa (Inpainting & Typesetting)**:
-   - **Xóa chữ cũ**: Tạo mặt nạ (mask) từ tọa độ OCR, giãn nở (dilate) mặt nạ để xóa sạch mép chữ, sau đó dùng thuật toán `cv2.inpaint` để tái tạo nền tự nhiên 99%.
-   - **Vẽ chữ mới**: Tự động ngắt dòng (Text Wrapping) theo độ rộng bong bóng thoại gốc, giảm dần kích thước font chữ (font size) để văn bản Việt vừa khít với chiều cao ô thoại. Vẽ chữ đen viền trắng để tăng độ tương phản rõ nét.
-5. **Đóng Gói & Tải Về**: Lưu các ảnh hoàn chỉnh vào thư mục kết quả và nén lại thành tệp ZIP cho phép tải về qua giao diện web.
+Hệ thống **tự động dịch truyện tranh bằng AI** — tích hợp hoàn chỉnh từ quét chữ OCR, dịch thuật gộp ngữ cảnh, xóa chữ cũ thông minh đến vẽ chữ mới. Hỗ trợ cả hai luồng: **dịch tự động qua Gemini API** và **nhập bản dịch thủ công JSON**.
 
 ---
 
-## 💻 Cách Khởi Chạy Hệ Thống
+## ✨ Tính Năng v2.0
 
-### Cách 1: Chạy cục bộ trên máy tính (Local Development)
+| Tính năng | Mô tả |
+|-----------|-------|
+| 🧠 **OCR đa ngôn ngữ** | PaddleOCR hỗ trợ Tiếng Anh, Trung, Nhật, Hàn. Tự phát hiện ngôn ngữ (Auto-detect) |
+| 🔗 **Stitching & Smart Slicing** | Khâu dọc tất cả trang → cắt thông minh theo khoảng trắng (Row Variance) để OCR không bỏ sót bong bóng thoại bị cắt ngang |
+| 🤖 **Dịch gộp ngữ cảnh** | Gửi cụm trang (batch) lên Gemini Flash để AI hiểu xưng hô và mạch truyện, tránh dịch rời rạc |
+| ✏️ **Inpainting lai** | Bong bóng thoại → tô đè màu nền gốc; Chữ SFX lơ lửng → xóa bằng LaMa-ONNX hoặc OpenCV |
+| 🔤 **Typesetting thông minh** | Tự chọn cỡ font vừa khít, ngắt dòng, căn giữa. Font Nunito Bold hỗ trợ Unicode đầy đủ |
+| 📦 **Hỗ trợ ảnh lẻ & ZIP** | Kéo thả 1 file ZIP hoặc chọn nhiều ảnh trực tiếp |
+| 🔄 **Dịch thủ công (không API)** | OCR xong → tải JSON → tự dịch → paste lại → pipeline tiếp tục vẽ chữ |
+| 🔁 **Auto-reset sau hoàn thành** | Giao diện tự reset sau 3s, giữ nguyên API Key và Prompt phụ |
+| 📜 **Prompt phụ xưng hô** | Truyền hướng dẫn xưng hô riêng (VD: "Muội - Huynh") vào prompt Gemini |
 
-#### 1. Cài đặt các thư viện Python:
-Đảm bảo bạn đã cài đặt Python 3.10 trở lên. Trong cửa sổ terminal, chạy lệnh:
-```bash
-pip install -r requirements.txt
+---
+
+## 🛠️ Quy Trình 5 Bước (Workflow)
+
+```
+ZIP / Ảnh lẻ
+     │
+     ▼ BƯỚC 1 — Thu thập & Stitching
+  Khâu dọc toàn bộ ảnh → Smart Slice tại khoảng trắng
+     │
+     ▼ BƯỚC 2 — OCR (PaddleOCR)
+  Quét chữ từng trang → Group bong bóng → Xuất JSON OCR
+     │
+     ▼ BƯỚC 3 — Dịch thuật
+  [Có API Key] → Gửi lên Gemini Flash theo batch
+  [Không API]  → Tạm dừng → Người dùng paste JSON bản dịch
+  [Có JSON sẵn] → Áp dụng ngay bản dịch tùy chỉnh
+     │
+     ▼ BƯỚC 4 — Inpainting & Typesetting
+  Xóa chữ cũ (LaMa / OpenCV) → Vẽ chữ Việt mới (Pillow)
+     │
+     ▼ BƯỚC 5 — Đóng gói
+  Ghép ảnh dọc (Webtoon) + Nén ZIP → Sẵn sàng tải về
 ```
 
-#### 2. Khởi chạy Server:
-Chạy script `run.py` (tự động tải xuống font chữ hỗ trợ tiếng Việt **Nunito Bold** và mở server Uvicorn):
+---
+
+## 💻 Cách Khởi Chạy
+
+### Cách 1: Docker (Khuyên dùng)
+
 ```bash
+# Build image
+docker build -t manga-translator .
+
+# Chạy container
+docker run -d -p 8000:8000 --name manga-translator-container manga-translator
+```
+
+Truy cập giao diện tại: [http://localhost:8000](http://localhost:8000)
+
+---
+
+### Cách 2: Local Development
+
+```bash
+# Cài thư viện
+pip install -r requirements.txt
+
+# Chạy server (tự động tải font Nunito Bold nếu chưa có)
 python run.py
 ```
 
-#### 3. Sử dụng:
-Mở trình duyệt web và truy cập địa chỉ: [http://localhost:8000](http://localhost:8000)
+Mở trình duyệt tại: [http://localhost:8000](http://localhost:8000)
 
 ---
 
-### Cách 2: Chạy trong Google Colab (Khuyên dùng - Sử dụng GPU T4 miễn phí)
+### Cách 3: Google Colab (Dùng GPU T4 miễn phí)
 
-Khi xử lý nhiều ảnh hoặc ảnh dung lượng lớn, nên chạy trên Google Colab để tận dụng GPU T4 giúp tăng tốc độ quét PaddleOCR đáng kể.
-
-#### 1. Tạo một Notebook mới trên Colab, đổi loại môi trường (Runtime) sang **GPU T4**.
-#### 2. Chạy khối mã cài đặt môi trường:
 ```python
-# 1. Clone code dự án
+# 1. Clone và cài đặt
 !git clone https://github.com/QuanHoang05/MANGA-TRANSLATION-AUTOMATION.git
 %cd MANGA-TRANSLATION-AUTOMATION
-
-# 2. Cài đặt thư viện hỗ trợ GPU cho PaddlePaddle
 !pip install paddlepaddle-gpu -i https://mirror.baidu.com/pypi/simple
 !pip install -r requirements.txt
-
-# 3. Cài đặt ngrok hoặc localtunnel để tạo đường link truy cập giao diện Web
 !pip install pyngrok
-```
 
-#### 3. Khởi chạy server và lấy link truy cập:
-```python
+# 2. Chạy server với ngrok tunnel
 from pyngrok import ngrok
-import os
-
-# Cấu hình ngrok auth token (lấy từ https://dashboard.ngrok.com)
-NGROK_TOKEN = "ĐIỀN_TOKEN_NGROK_CỦA_BẠN_VÀO_ĐÂY"
-ngrok.set_auth_token(NGROK_TOKEN)
-
-# Mở cổng tunnel 8000
+ngrok.set_auth_token("NGROK_TOKEN_CỦA_BẠN")
 public_url = ngrok.connect(8000)
-print("👉 TRUY CẬP ĐƯỜNG LINK WEB GIAO DIỆN TẠI ĐÂY:", public_url.public_url)
-
-# Chạy server FastAPI
+print("🌐 Truy cập tại:", public_url.public_url)
 !python run.py
 ```
 
 ---
 
-### Cách 3: Đóng gói Docker Image (Docker Production)
+## 🎮 Hướng Dẫn Sử Dụng
 
-Hệ thống đã có sẵn `Dockerfile` đóng gói các thư viện hệ thống cần thiết cho OpenCV và PaddleOCR chạy ổn định trên Linux.
+### Chế độ 1: Dịch tự động (Gemini API)
 
-#### 1. Build Docker Image:
-```bash
-docker build -t manga-translator .
-```
+1. Nhập **Gemini API Key** (miễn phí tại [Google AI Studio](https://aistudio.google.com/))
+2. Chọn ngôn ngữ gốc / dịch, văn phong
+3. *(Tuỳ chọn)* Nhập **Prompt phụ** hướng dẫn xưng hô đặc biệt
+4. Tải lên file ZIP hoặc nhiều ảnh → Nhấn **Bắt Đầu Dịch Tự Động**
+5. Khi hoàn thành: tải ZIP kết quả hoặc ảnh ghép dọc Webtoon
 
-#### 2. Chạy container:
-```bash
-docker run -d -p 8000:8000 --name manga-translator-container manga-translator
-```
-Truy cập qua trình duyệt tại: [http://localhost:8000](http://localhost:8000)
+### Chế độ 2: OCR + Dịch thủ công (không cần API Key)
+
+1. Để trống API Key → Tải file lên → Nhấn **Bắt Đầu**
+2. Xác nhận chạy ở chế độ **Chỉ quét OCR**
+3. Hệ thống quét xong và tạm dừng → Tải JSON OCR về
+4. Tự dịch từng ô thoại → Paste JSON bản dịch vào ô **"Bản dịch JSON"**
+5. Nhấn **Tiếp Tục Dịch** → Pipeline tự vẽ chữ và đóng gói
+
+### Chế độ 3: Nhập bản dịch JSON trước khi chạy
+
+1. Paste JSON bản dịch vào ô **"Bản dịch JSON"** trước khi nhấn Start
+2. Pipeline sẽ dùng bản dịch đó, bỏ qua bước gọi API
 
 ---
 
-## 🌟 Các Tính Năng Cao Cấp Được Tích Hợp
+## 📁 Cấu Trúc Dự Án
 
-- **Structured Output JSON**: Ngăn chặn hoàn toàn lỗi lệch định dạng hoặc mất mát ID thoại bằng cách cấu hình `response_schema` cứng trong API Gemini.
-- **Micro-animations & Dark Theme Layout**: Giao diện Premium được thiết kế với phong cách Glassmorphic hiện đại, hỗ trợ drag-and-drop tải file trực quan và các thanh tiến trình nhịp nhàng.
-- **Double Image Comparison**: Sau khi dịch xong, giao diện hiển thị bảng so sánh 2 nửa màn hình (Ảnh gốc chứa viền đỏ OCR và Ảnh kết quả dịch sạch sẽ) giúp người dùng dễ dàng thẩm định chất lượng bản dịch từng trang.
-- **Auto-Font Scaling & Outline Stroke**: Chữ tiếng Việt được vẽ bằng màu đen cùng viền trắng dày 2px, tự động giảm size từ 28 xuống 10 cho đến khi vừa khít bong bóng thoại, cam kết dễ đọc trên mọi hình nền.
+```
+MANGA-TRANSLATION-AUTOMATION/
+├── app/
+│   ├── main.py            # FastAPI routes & job management
+│   ├── pipeline.py        # MangaPipeline (5 bước xử lý)
+│   ├── static/
+│   │   ├── css/style.css  # Giao diện Premium Dark Theme
+│   │   └── js/app.js      # Frontend logic & SSE client
+│   └── templates/
+│       └── index.html     # Giao diện chính
+├── fonts/
+│   └── Nunito-Bold.ttf    # Font Unicode cho vẽ chữ Việt
+├── data/                  # Thư mục lưu uploads & jobs (auto-created)
+├── Dockerfile
+├── requirements.txt
+├── run.py                 # Entry point (tải font nếu chưa có)
+└── README.md
+```
+
+---
+
+## 🔧 Biến Môi Trường & Cấu Hình
+
+| Tham số | Mặc định | Mô tả |
+|---------|----------|-------|
+| Batch size | 10 trang | Số trang gộp trong 1 lần gọi Gemini |
+| Ngôn ngữ gốc | `en` | `en`, `ch`, `japan`, `korean`, `auto` |
+| Ngôn ngữ dịch | `vi` | `vi`, `en`, `ch`, `japan`, `korean` |
+| Văn phong | `tự nhiên` | `tự nhiên`, `cổ trang`, `dễ thương`, `lịch sự` |
+
+---
+
+## 📦 Thư Viện Chính
+
+| Thư viện | Mục đích |
+|----------|----------|
+| `fastapi` + `uvicorn` | Web server & REST API |
+| `paddleocr` | Nhận diện chữ OCR đa ngôn ngữ |
+| `google-generativeai` | Gọi Gemini API dịch thuật |
+| `opencv-python` | Xử lý ảnh & Inpainting |
+| `Pillow` | Vẽ chữ tiếng Việt lên ảnh |
+| `simple-lama-inpainting` | Xóa chữ SFX lơ lửng (AI) |
+| `numpy` | Tính toán mảng/ma trận |
+
+---
+
+## ⚠️ Lưu Ý
+
+- **RAM**: OCR và inpainting tốn RAM, khuyên dùng tối thiểu **4GB RAM** (8GB cho chương dài)
+- **GPU**: PaddleOCR sẽ tự dùng GPU nếu có CUDA. Docker chạy trên CPU
+- **Font**: `run.py` tự tải `Nunito-Bold.ttf` về thư mục `fonts/` khi khởi động
+- **API Key**: Gemini API miễn phí có giới hạn 15 req/min, pipeline tự thử lại khi lỗi rate limit

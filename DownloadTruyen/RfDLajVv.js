@@ -1,1 +1,0 @@
-function i(e,n=1){const r=Math.floor(Number(e));return!Number.isFinite(r)||r<1?n:r}function o(e,n=20,r=100){const t=Math.floor(Number(e)),a=Math.min(Math.max(1,Math.floor(n)),r);return!Number.isFinite(t)||t<1?a:Math.min(t,r)}export{o as a,i as n};

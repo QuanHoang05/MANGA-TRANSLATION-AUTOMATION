@@ -179,7 +179,46 @@ document.addEventListener("DOMContentLoaded", () => {
         dropzone.querySelector(".dropzone-content").style.display = "flex";
         selectedFileInfo.style.display = "none";
         btnStartPipeline.disabled = true;
-        addLogLine("Đã hủy bỏ file đã chọn.");
+        addLogLine("Đã hủy bỏ file đã chọn. Dữ liệu phiên làm việc đã được xóa sạch.");
+
+        // Reset toàn bộ trạng thái job cũ
+        if (eventSource) {
+            eventSource.close();
+            eventSource = null;
+        }
+        currentJobId = null;
+        jobImages = [];
+        currentImageIndex = 0;
+
+        // Reset tiến trình & log
+        progressPercent.textContent = "0%";
+        progressFill.style.width = "0%";
+        progressLabel.textContent = "Chưa khởi chạy";
+        statusBadge.textContent = "SẴN SÀNG";
+        statusBadge.className = "status-badge state-idle";
+        consoleLogs.innerHTML = "";
+        addLogLine("Hệ thống sẵn sàng. Vui lòng tải file lên để bắt đầu.");
+
+        // Reset nút tải xuống
+        btnDownload.classList.add("disabled");
+        btnDownloadStitched.classList.add("disabled");
+        btnDownload.removeAttribute("href");
+        btnDownloadStitched.removeAttribute("href");
+
+        // Reset OCR & bản dịch
+        ocrResultsBox.value = "";
+        btnDownloadOcr.disabled = true;
+        btnDownloadTranslation.disabled = true;
+
+        // Ẩn preview
+        previewCard.style.display = "none";
+
+        // Reset step tracker
+        document.querySelectorAll(".step-item").forEach(item => {
+            item.classList.remove("active", "done");
+        });
+
+        unlockUI();
     }
 
     // 4. Hàm bổ trợ in dòng logs console của hệ thống
@@ -354,11 +393,9 @@ document.addEventListener("DOMContentLoaded", () => {
                 statusBadge.className = "status-badge state-completed";
                 progressLabel.textContent = "Hoàn thành toàn bộ quy trình dịch!";
                 
-                // Mở khóa cho phép tải xuống tệp tin dịch hoàn chỉnh
+                // Mở khóa tải xuống
                 btnDownload.href = `/api/download/${jobId}`;
                 btnDownload.classList.remove("disabled");
-                
-                // Mở khóa cho phép tải xuống ảnh ghép dọc Webtoon
                 btnDownloadStitched.href = `/api/download-stitched/${jobId}`;
                 btnDownloadStitched.classList.remove("disabled");
                 
@@ -366,22 +403,24 @@ document.addEventListener("DOMContentLoaded", () => {
                 if (data.images && data.images.length > 0) {
                     jobImages = data.images;
                     currentImageIndex = 0;
-                    
-                    // Tự động phát hiện nếu nguồn là tiếng Nhật thì đặt mặc định chiều đọc RTL
                     if (data.src_lang === "japan" || data.src_lang === "jp") {
                         readingDirectionSelect.value = "rtl";
                     } else {
                         readingDirectionSelect.value = "ltr";
                     }
-                    
                     showImageComparison(jobId);
-                    // Tạo nội dung cho Scrolling Viewer
                     buildScrollingViewer(jobId);
                 }
 
                 eventSource.close();
                 btnContinuePipeline.style.display = "none";
                 unlockUI();
+
+                // ── Tự động reset giao diện sau 3 giây để chuẩn bị cho lượt dịch tiếp theo ──
+                // (Giữ nguyên API Key và Prompt phụ, reset phần còn lại)
+                setTimeout(() => {
+                    autoResetAfterComplete();
+                }, 3000);
             } else if (data.status === "paused") {
                 statusBadge.textContent = "TẠM DỪNG";
                 statusBadge.className = "status-badge state-paused";
@@ -467,6 +506,67 @@ document.addEventListener("DOMContentLoaded", () => {
         btnLoader.style.display = "none";
         btnContinuePipeline.style.display = "none";
         btnContinueLoader.style.display = "none";
+    }
+
+    /**
+     * Reset giao diện về trạng thái ban đầu sau khi hoàn thành 1 lượt dịch.
+     * Giữ nguyên: API Key, Prompt phụ (additionalInstructions).
+     * Reset tất cả phần còn lại.
+     */
+    function autoResetAfterComplete() {
+        // Lưu lại giá trị cần giữ
+        const savedApiKey = apiKeyInput.value;
+        const savedInstructions = additionalInstructionsInput.value;
+
+        // Reset file upload
+        selectedFiles = [];
+        fileInput.value = "";
+        dropzone.querySelector(".dropzone-content").style.display = "flex";
+        selectedFileInfo.style.display = "none";
+        btnStartPipeline.disabled = true;
+
+        // Reset job state
+        if (eventSource) { eventSource.close(); eventSource = null; }
+        currentJobId = null;
+        jobImages = [];
+        currentImageIndex = 0;
+
+        // Reset tiến trình
+        progressPercent.textContent = "0%";
+        progressFill.style.width = "0%";
+        progressLabel.textContent = "Chưa khởi chạy";
+        statusBadge.textContent = "SẴN SÀNG";
+        statusBadge.className = "status-badge state-idle";
+
+        // Reset console log
+        consoleLogs.innerHTML = "";
+        addLogLine("✅ Đã hoàn thành! Giao diện đã được reset. Tải file mới để bắt đầu lượt dịch tiếp theo.", "system-msg");
+
+        // Reset nút download
+        btnDownload.classList.add("disabled");
+        btnDownloadStitched.classList.add("disabled");
+        btnDownload.removeAttribute("href");
+        btnDownloadStitched.removeAttribute("href");
+
+        // Reset OCR & bản dịch
+        ocrResultsBox.value = "";
+        customTranslationBox.value = "";
+        btnDownloadOcr.disabled = true;
+        btnDownloadTranslation.disabled = true;
+
+        // Ẩn preview
+        previewCard.style.display = "none";
+
+        // Reset step tracker
+        document.querySelectorAll(".step-item").forEach(item => {
+            item.classList.remove("active", "done");
+        });
+
+        // Khôi phục giá trị đã lưu
+        apiKeyInput.value = savedApiKey;
+        additionalInstructionsInput.value = savedInstructions;
+
+        unlockUI();
     }
 
     // 6. Quản lý tương tác của bảng so sánh ảnh trước/sau và đọc trang Manga
