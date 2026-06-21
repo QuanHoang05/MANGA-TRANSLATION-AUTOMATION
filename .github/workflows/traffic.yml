@@ -20,4 +20,5 @@ jobs:
           token: ${{ secrets.METRICS_TOKEN }} 
           base: ""
           plugin_traffic: yes
+          plugins_errors_fatal: yes
           filename: traffic.svg # Tên file ảnh biểu đồ xuất ra
