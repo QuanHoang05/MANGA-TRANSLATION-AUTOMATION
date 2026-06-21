@@ -18,7 +18,7 @@ jobs:
           # LƯU Ý: Bắt buộc dùng METRICS_TOKEN (Personal Access Token có quyền 'repo')
           # Vì GITHUB_TOKEN mặc định của GitHub bị chặn quyền truy cập vào API Traffic (lượt xem/tải).
           token: ${{ secrets.METRICS_TOKEN }} 
-          base: ""
+          base: repositories
           plugin_traffic: yes
           plugins_errors_fatal: yes
           filename: traffic.svg # Tên file ảnh biểu đồ xuất ra
