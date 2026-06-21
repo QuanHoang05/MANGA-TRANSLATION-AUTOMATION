@@ -13,7 +13,7 @@ jobs:
         uses: actions/checkout@v4
         
       - name: Get Traffic Data
-        uses: sangonzal/repository-traffic-action@v0.1.6
+        uses: sangonzal/repository-traffic-action@master
         env:
           FEED_TOKEN: ${{ secrets.METRICS_TOKEN }}
           TRAFFIC_ACTION_TOKEN: ${{ secrets.METRICS_TOKEN }}
