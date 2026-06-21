@@ -123,9 +123,6 @@ print("🌐 Truy cập tại:", public_url.public_url)
 
 ```
 MANGA-TRANSLATION-AUTOMATION/
-├── .github/
-│   └── workflows/
-│       └── traffic.yml    # File cấu hình kịch bản cho Bot thống kê
 ├── app/
 │   ├── main.py            # FastAPI routes & job management
 │   ├── pipeline.py        # MangaPipeline (5 bước xử lý)
