@@ -2,24 +2,21 @@ name: GitHub Traffic Analytics
 
 on:
   schedule:
-    - cron: '0 0 * * *' # Hệ thống tự chạy vào 0h mỗi ngày
-  workflow_dispatch: # Tạo nút bấm để tự kích hoạt chạy thử ngay lập tức
+    - cron: '0 0 * * *' # Tự động chạy vào 0h mỗi ngày
+  workflow_dispatch: # Nút bấm chạy bằng tay luôn
 
 jobs:
-  publish:
+  traffic:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
-      - name: Generate Traffic Metrics Graph
-        uses: lowlighter/metrics@latest
+        
+      - name: Get Traffic Data
+        uses: sangonzal/repository-traffic-action@v0.1.7
+        env:
+          FEED_TOKEN: ${{ secrets.METRICS_TOKEN }}
+          TRAFFIC_ACTION_TOKEN: ${{ secrets.METRICS_TOKEN }}
         with:
-          token: ${{ secrets.METRICS_TOKEN }}
-          template: repository
-          repo: MANGA-TRANSLATION-AUTOMATION
-          user: QuanHoang05
-          base: ""
-          plugin_traffic: yes
-          plugins_errors_fatal: yes
-          filename: traffic.svg # Tên file ảnh biểu đồ xuất ra
+          # Bot sẽ tự động tạo riêng một nhánh tên là 'traffic' để cất số liệu
+          TRAFFIC_BRANCH: 'traffic'

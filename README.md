@@ -1,10 +1,6 @@
 # Manga Translation Automation Pipeline v2.0 🚀
 
 Hệ thống **tự động dịch truyện tranh bằng AI** — tích hợp hoàn chỉnh từ quét chữ OCR, dịch thuật gộp ngữ cảnh, xóa chữ cũ thông minh đến vẽ chữ mới. Hỗ trợ cả hai luồng: **dịch tự động qua Gemini API** và **nhập bản dịch thủ công JSON**.
-
-## 📊 Thống kê tương tác Repo
-![GitHub Traffic](https://raw.githubusercontent.com/QuanHoang05/MANGA-TRANSLATION-AUTOMATION/main/traffic.svg)
-
 ---
 
 ## ✨ Tính Năng v2.0
@@ -144,7 +140,6 @@ MANGA-TRANSLATION-AUTOMATION/
 ├── Dockerfile
 ├── requirements.txt
 ├── run.py                 # Entry point (tải font nếu chưa có)
-├── traffic.svg            # Biểu đồ thống kê lượng truy cập (do Bot tự vẽ)
 └── README.md
 ```
 
