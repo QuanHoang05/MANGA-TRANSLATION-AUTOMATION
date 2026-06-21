@@ -2,6 +2,9 @@
 
 Hệ thống **tự động dịch truyện tranh bằng AI** — tích hợp hoàn chỉnh từ quét chữ OCR, dịch thuật gộp ngữ cảnh, xóa chữ cũ thông minh đến vẽ chữ mới. Hỗ trợ cả hai luồng: **dịch tự động qua Gemini API** và **nhập bản dịch thủ công JSON**.
 
+## 📊 Thống kê tương tác Repo
+![GitHub Traffic](traffic.svg)
+
 ---
 
 ## ✨ Tính Năng v2.0
@@ -124,6 +127,9 @@ print("🌐 Truy cập tại:", public_url.public_url)
 
 ```
 MANGA-TRANSLATION-AUTOMATION/
+├── .github/
+│   └── workflows/
+│       └── traffic.yml    # File cấu hình kịch bản cho Bot thống kê
 ├── app/
 │   ├── main.py            # FastAPI routes & job management
 │   ├── pipeline.py        # MangaPipeline (5 bước xử lý)
@@ -138,6 +144,7 @@ MANGA-TRANSLATION-AUTOMATION/
 ├── Dockerfile
 ├── requirements.txt
 ├── run.py                 # Entry point (tải font nếu chưa có)
+├── traffic.svg            # Biểu đồ thống kê lượng truy cập (do Bot tự vẽ)
 └── README.md
 ```
 

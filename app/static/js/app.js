@@ -205,8 +205,9 @@ document.addEventListener("DOMContentLoaded", () => {
         btnDownload.removeAttribute("href");
         btnDownloadStitched.removeAttribute("href");
 
-        // Reset OCR & bản dịch
+        // Reset OCR & bản dịch (xóa sạch, không giữ lại)
         ocrResultsBox.value = "";
+        customTranslationBox.value = "";
         btnDownloadOcr.disabled = true;
         btnDownloadTranslation.disabled = true;
 
