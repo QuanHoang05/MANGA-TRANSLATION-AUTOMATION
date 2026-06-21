@@ -1,0 +1,23 @@
+name: GitHub Traffic Analytics
+
+on:
+  schedule:
+    - cron: '0 0 * * *' # Hệ thống tự chạy vào 0h mỗi ngày
+  workflow_dispatch: # Tạo nút bấm để tự kích hoạt chạy thử ngay lập tức
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Generate Traffic Metrics Graph
+        uses: lowlighter/metrics@latest
+        with:
+          # LƯU Ý: Bắt buộc dùng METRICS_TOKEN (Personal Access Token có quyền 'repo')
+          # Vì GITHUB_TOKEN mặc định của GitHub bị chặn quyền truy cập vào API Traffic (lượt xem/tải).
+          token: ${{ secrets.METRICS_TOKEN }} 
+          base: ""
+          plugin_traffic: yes
+          filename: traffic.svg # Tên file ảnh biểu đồ xuất ra
