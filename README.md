@@ -1,6 +1,16 @@
 # Manga Translation Automation Pipeline v2.0 🚀
 
 Hệ thống **tự động dịch truyện tranh bằng AI** — tích hợp hoàn chỉnh từ quét chữ OCR, dịch thuật gộp ngữ cảnh, xóa chữ cũ thông minh đến vẽ chữ mới. Hỗ trợ cả hai luồng: **dịch tự động qua Gemini API** và **nhập bản dịch thủ công JSON**.
+
+---
+
+### ⭐ Ủng Hộ Dự Án (Show your support)
+
+> [!TIP]
+> **Bạn có biết?** Dự án hiện đã đạt hơn **300 lượt clone** trên GitHub, nhưng số lượt thả sao (Star) ⭐ vẫn còn cực kỳ khiêm tốn.
+> 
+> Nếu công cụ này giúp ích cho công việc của bạn, hãy dành tặng mình **1 lượt Star** ở góc trên bên phải trang repository này nhé! Mỗi ngôi sao của các bạn chính là nguồn động lực to lớn nhất giúp mình tiếp tục duy trì, tối ưu hóa hiệu năng và phát triển thêm nhiều tính năng đột phá hơn nữa. Cảm ơn bạn rất nhiều! ❤️
+
 ---
 
 ## ✨ Tính Năng v2.0
@@ -173,3 +183,14 @@ MANGA-TRANSLATION-AUTOMATION/
 - **GPU**: PaddleOCR sẽ tự dùng GPU nếu có CUDA. Docker chạy trên CPU
 - **Font**: `run.py` tự tải `Nunito-Bold.ttf` về thư mục `fonts/` khi khởi động
 - **API Key**: Gemini API miễn phí có giới hạn 15 req/min, pipeline tự thử lại khi lỗi rate limit
+
+---
+
+## ☕ Donate / Ủng Hộ
+
+Nếu dự án này giúp ích cho công việc của bạn, hãy ủng hộ tác giả một ly cà phê nhé! Mỗi lượt đóng góp của bạn sẽ giúp mình có thêm chi phí để duy trì, cập nhật API và phát triển nhiều tính năng mới hữu ích hơn.
+
+| Ngân hàng Quân Đội (MB Bank) | Quét mã QR thanh toán (VietQR) |
+| :--- | :---: |
+| 🏦 **Ngân hàng:** MB Bank (Ngân hàng Quân Đội)<br>👤 **Chủ tài khoản:** HOANG HO DINH QUAN<br>💳 **Số tài khoản:** `0383317427` | <img src="https://img.vietqr.io/image/MB-0383317427-compact2.png?accountName=HOANG%20HO%20DINH%20QUAN&addInfo=Ung%20ho%20Manga%20Translation" width="220px" alt="VietQR MB Bank HOANG HO DINH QUAN" /> |
+
