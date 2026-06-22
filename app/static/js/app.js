@@ -174,52 +174,8 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     function resetFileSelection() {
-        selectedFiles = [];
-        fileInput.value = "";
-        dropzone.querySelector(".dropzone-content").style.display = "flex";
-        selectedFileInfo.style.display = "none";
-        btnStartPipeline.disabled = true;
-        addLogLine("Đã hủy bỏ file đã chọn. Dữ liệu phiên làm việc đã được xóa sạch.");
-
-        // Reset toàn bộ trạng thái job cũ
-        if (eventSource) {
-            eventSource.close();
-            eventSource = null;
-        }
-        currentJobId = null;
-        jobImages = [];
-        currentImageIndex = 0;
-
-        // Reset tiến trình & log
-        progressPercent.textContent = "0%";
-        progressFill.style.width = "0%";
-        progressLabel.textContent = "Chưa khởi chạy";
-        statusBadge.textContent = "SẴN SÀNG";
-        statusBadge.className = "status-badge state-idle";
-        consoleLogs.innerHTML = "";
-        addLogLine("Hệ thống sẵn sàng. Vui lòng tải file lên để bắt đầu.");
-
-        // Reset nút tải xuống
-        btnDownload.classList.add("disabled");
-        btnDownloadStitched.classList.add("disabled");
-        btnDownload.removeAttribute("href");
-        btnDownloadStitched.removeAttribute("href");
-
-        // Reset OCR & bản dịch (xóa sạch, không giữ lại)
-        ocrResultsBox.value = "";
-        customTranslationBox.value = "";
-        btnDownloadOcr.disabled = true;
-        btnDownloadTranslation.disabled = true;
-
-        // Ẩn preview
-        previewCard.style.display = "none";
-
-        // Reset step tracker
-        document.querySelectorAll(".step-item").forEach(item => {
-            item.classList.remove("active", "done");
-        });
-
-        unlockUI();
+        // Gọi autoResetAfterComplete để giữ lại API Key & Prompt phụ
+        autoResetAfterComplete();
     }
 
     // 4. Hàm bổ trợ in dòng logs console của hệ thống
@@ -417,11 +373,8 @@ document.addEventListener("DOMContentLoaded", () => {
                 btnContinuePipeline.style.display = "none";
                 unlockUI();
 
-                // ── Tự động reset giao diện sau 3 giây để chuẩn bị cho lượt dịch tiếp theo ──
-                // (Giữ nguyên API Key và Prompt phụ, reset phần còn lại)
-                setTimeout(() => {
-                    autoResetAfterComplete();
-                }, 3000);
+                // ── Hướng dẫn người dùng nhấn ✕ để reset cho lượt dịch tiếp theo ──
+                addLogLine("✅ Đã hoàn thành! Nhấn dấu ✕ ở phần 'Tải Lên Tập Truyện' để reset và bắt đầu lượt dịch tiếp theo.", "system-msg");
             } else if (data.status === "paused") {
                 statusBadge.textContent = "TẠM DỪNG";
                 statusBadge.className = "status-badge state-paused";
