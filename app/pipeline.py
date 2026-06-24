@@ -231,9 +231,11 @@ class MangaPipeline:
             self.log(f"Lỗi khi dò ngôn ngữ tự động: {e}. Mặc định dùng 'en'.", 15.5)
             return "en"
 
-    def group_ocr_boxes(self, ocr_items: list, lang: str) -> list:
+    def group_ocr_boxes(self, ocr_items: list, lang: str, cv2_img=None) -> list:
         """
         Gom nhóm các dòng chữ OCR thuộc cùng một bong bóng thoại bằng Union-Find.
+        Nếu có cv2_img, chỉ merge các box nằm trong cùng một bong bóng thoại (bubble contour).
+        Nếu không phát hiện bong bóng (như chữ SFX), sử dụng khoảng cách tâm để merge.
         """
         if not ocr_items:
             return []
@@ -251,15 +253,50 @@ class MangaPipeline:
             if ri != rj:
                 parent[ri] = rj
 
+        # Bước 1: Dò tìm bong bóng thoại cho từng box độc lập
+        bubble_data = {}  # {idx: (is_bubble, contour)}
+        if cv2_img is not None:
+            for i in range(n):
+                is_b, contour, _, _ = self.find_bubble_contour_and_rect(cv2_img, ocr_items[i]["bbox"])
+                bubble_data[i] = (is_b, contour)
+        else:
+            for i in range(n):
+                bubble_data[i] = (False, None)
+
+        # Bước 2: Duyệt qua các cặp để quyết định merge
         for i in range(n):
             for j in range(i + 1, n):
                 x0A, y0A, x2A, y2A = ocr_items[i]["bbox"]
                 x0B, y0B, x2B, y2B = ocr_items[j]["bbox"]
-                h_avg = ((y2A - y0A) + (y2B - y0B)) / 2.0
-                v_gap = max(0, y0B - y2A) if y0B >= y2A else max(0, y0A - y2B)
-                overlap_x = min(x2A, x2B) - max(x0A, x0B)
-                if v_gap <= h_avg * 1.5 and overlap_x > -(h_avg * 0.8):
-                    union(i, j)
+
+                cxA, cyA = (x0A + x2A) / 2.0, (y0A + y2A) / 2.0
+                cxB, cyB = (x0B + x2B) / 2.0, (y0B + y2B) / 2.0
+
+                is_bubble_A, contour_A = bubble_data[i]
+                is_bubble_B, contour_B = bubble_data[j]
+
+                # TH1: Cả hai đều được xác định thuộc bong bóng thoại
+                if is_bubble_A and is_bubble_B and contour_A is not None and contour_B is not None:
+                    # Kiểm tra xem tâm của box B có nằm trong contour của A và ngược lại hay không
+                    ptA = (float(cxA), float(cyA))
+                    ptB = (float(cxB), float(cyB))
+                    
+                    in_A = cv2.pointPolygonTest(contour_A, ptB, False) >= 0
+                    in_B = cv2.pointPolygonTest(contour_B, ptA, False) >= 0
+                    
+                    if in_A or in_B:
+                        union(i, j)
+                else:
+                    # TH2: Là chữ SFX ngoài bong bóng hoặc không có cv2_img -> Merge bằng khoảng cách tâm và độ phủ ngang
+                    h_avg = ((y2A - y0A) + (y2B - y0B)) / 2.0
+                    w_avg = ((x2A - x0A) + (x2B - x0B)) / 2.0
+                    
+                    dist = math.sqrt((cxA - cxB)**2 + (cyA - cyB)**2)
+                    overlap_x = min(x2A, x2B) - max(x0A, x0B)
+
+                    # Chỉ merge các dòng chữ rời rạc ngoài bong bóng (như SFX dọc) khi ở rất gần nhau
+                    if dist < h_avg * 2.2 and overlap_x > -(w_avg * 0.4):
+                        union(i, j)
 
         groups: dict = {}
         for i in range(n):
@@ -560,14 +597,34 @@ Hãy dịch toàn bộ danh sách và trả về kết quả JSON:
         kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k_size, k_size))
         eroded = cv2.erode(bubble_mask, kernel, iterations=1)
 
-        inscribed = self.max_inscribed_rectangle(eroded > 0)
-        if inscribed[2] > inscribed[0] and inscribed[3] > inscribed[1]:
-            best_rect = [
-                inscribed[0] + xmin,
-                inscribed[1] + ymin,
-                inscribed[2] + xmin,
-                inscribed[3] + ymin
-            ]
+        # Lấy bounding box của eroded mask (đại diện cho ranh giới an toàn của bong bóng)
+        ys, xs = np.where(eroded > 0)
+        if xs.size > 0 and ys.size > 0:
+            b_x0 = xs.min() + xmin
+            b_y0 = ys.min() + ymin
+            b_x2 = xs.max() + xmin
+            b_y2 = ys.max() + ymin
+        else:
+            b_x0, b_y0, b_x2, b_y2 = xmin, ymin, xmax, ymax
+
+        # Mở rộng OCR box 35% chiều rộng và 20% chiều cao để tạo không gian chứa chữ dịch
+        exp_w = int(box_w * 0.35)
+        exp_h = int(box_h * 0.20)
+        
+        x0_exp = x0 - exp_w
+        x2_exp = x2 + exp_w
+        y0_exp = y0 - exp_h
+        y2_exp = y2 + exp_h
+
+        # Clip (cắt tỉa) hộp mở rộng theo biên an toàn của bong bóng
+        x0_new = max(x0_exp, b_x0)
+        y0_new = max(y0_exp, b_y0)
+        x2_new = min(x2_exp, b_x2)
+        y2_new = min(y2_exp, b_y2)
+
+        # Đảm bảo box hợp lệ (không bị đảo ngược tọa độ)
+        if x2_new > x0_new and y2_new > y0_new:
+            best_rect = [x0_new, y0_new, x2_new, y2_new]
         else:
             best_rect = [x0, y0, x2, y2]
 
@@ -599,7 +656,9 @@ Hãy dịch toàn bộ danh sách và trả về kết quả JSON:
         optimal_lines = []
         optimal_line_heights = []
 
-        for font_size in range(38, 5, -2):
+        # Tự động điều chỉnh kích cỡ font bắt đầu dựa trên chiều cao của box (tối thiểu 38, tối đa 85)
+        start_font_size = max(38, min(85, int(box_h * 0.8)))
+        for font_size in range(start_font_size, 5, -2):
             try:
                 font = ImageFont.load_default() if font_path == "Arial" else ImageFont.truetype(font_path, font_size)
             except Exception:
@@ -760,6 +819,7 @@ Hãy dịch toàn bộ danh sách và trả về kết quả JSON:
             self.log(f"Đang quét OCR ảnh {idx + 1}/{total_images}: {img_name}...", pct)
 
             try:
+                cv2_img = cv2.imread(img_path)
                 detections = self._run_ocr_on_image(ocr_model, img_path)
                 img_ocr_items = []
 
@@ -776,7 +836,7 @@ Hãy dịch toàn bộ danh sách và trả về kết quả JSON:
                         "confidence": float(conf)
                     })
 
-                ocr_data[img_path] = self.group_ocr_boxes(img_ocr_items, self.src_lang)
+                ocr_data[img_path] = self.group_ocr_boxes(img_ocr_items, self.src_lang, cv2_img)
 
             except Exception as e:
                 self.log(f"Lỗi khi quét OCR ảnh {img_name}: {str(e)}", pct)
@@ -891,22 +951,32 @@ Hãy dịch toàn bộ danh sách và trả về kết quả JSON:
                         is_bubble, _, best_rect, bg_color = self.find_bubble_contour_and_rect(cv2_img, item["bbox"])
                         padded_rect = self.apply_adaptive_padding(item["bbox"], W_img, H_img)
 
-                        if is_bubble:
-                            # Tô đè màu nền đơn sắc của bong bóng thoại
+                        # Kiểm tra xem LaMa có khả dụng không và kích thước box có nhỏ không
+                        lama_available = self._get_lama_instance() is not None
+                        x0, y0, x2, y2 = item["bbox"]
+                        box_w, box_h = x2 - x0, y2 - y0
+                        is_small_box = (box_w < 250 or box_h < 120)
+
+                        if is_bubble and not (is_small_box and lama_available):
+                            # Tô đè màu nền đơn sắc của bong bóng thoại (cho bong bóng lớn hoặc khi không có LaMa)
                             sub_mask = np.zeros(cv2_img.shape[:2], dtype=np.uint8)
                             for poly in item["box_points"]:
                                 pts = np.array(poly, dtype=np.int32)
                                 cv2.fillPoly(sub_mask, [pts], 255)
                             sub_mask = cv2.dilate(sub_mask, cv2.getStructuringElement(cv2.MORPH_RECT, (4, 4)))
                             cv2_img[sub_mask == 255] = bg_color
-                            typeset_info[item["id"]] = {"bbox": padded_rect, "is_sfx": False}
+                            typeset_info[item["id"]] = {"bbox": best_rect, "is_sfx": False}
                         else:
-                            # Chữ SFX lơ lửng → Inpaint nâng cao
+                            # Chữ SFX lơ lửng, hoặc bong bóng nhỏ khi có LaMa → Dùng LaMa / OpenCV Inpaint nâng cao để xóa chữ
                             for poly in item["box_points"]:
                                 pts = np.array(poly, dtype=np.int32)
                                 cv2.fillPoly(sfx_mask, [pts], 255)
                             has_sfx = True
-                            typeset_info[item["id"]] = {"bbox": padded_rect, "is_sfx": True}
+                            # Giữ nguyên kiểu vẽ chữ (is_sfx=False nếu ban đầu là bubble, dùng best_rect)
+                            if is_bubble:
+                                typeset_info[item["id"]] = {"bbox": best_rect, "is_sfx": False}
+                            else:
+                                typeset_info[item["id"]] = {"bbox": padded_rect, "is_sfx": True}
 
                     if has_sfx:
                         sfx_mask = cv2.dilate(sfx_mask, cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5)))
@@ -917,10 +987,26 @@ Hãy dịch toàn bộ danh sách và trả về kết quả JSON:
                             contours, _ = cv2.findContours(sfx_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
                             for cnt in contours:
                                 x, y, w, h = cv2.boundingRect(cnt)
-                                pad = 15
-                                xmin, ymin = max(0, x - pad), max(0, y - pad)
-                                xmax = min(cv2_img.shape[1], x + w + pad)
-                                ymax = min(cv2_img.shape[0], y + h + pad)
+                                
+                                # Tăng kích thước vùng đệm (padding) để LaMa nhận dạng bối cảnh xung quanh tốt hơn
+                                pad_w = max(45, int(w * 0.35))
+                                pad_h = max(45, int(h * 0.35))
+                                
+                                xmin, ymin = max(0, x - pad_w), max(0, y - pad_h)
+                                xmax = min(cv2_img.shape[1], x + w + pad_w)
+                                ymax = min(cv2_img.shape[0], y + h + pad_h)
+                                
+                                # Đảm bảo kích thước tối thiểu của crop là 160x160 để mô hình AI hoạt động tối ưu nhất
+                                crop_w = xmax - xmin
+                                crop_h = ymax - ymin
+                                if crop_w < 160:
+                                    diff = 160 - crop_w
+                                    xmin = max(0, xmin - diff // 2)
+                                    xmax = min(cv2_img.shape[1], xmax + diff // 2)
+                                if crop_h < 160:
+                                    diff = 160 - crop_h
+                                    ymin = max(0, ymin - diff // 2)
+                                    ymax = min(cv2_img.shape[0], ymax + diff // 2)
 
                                 if (xmax - xmin) > 0 and (ymax - ymin) > 0:
                                     crop_img = cv2_img[ymin:ymax, xmin:xmax]
