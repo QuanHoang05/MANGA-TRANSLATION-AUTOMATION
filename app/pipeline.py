@@ -157,8 +157,13 @@ class MangaPipeline:
             else:
                 search_start = y + min_slice_h
                 search_end = min(y + target_max_height, total_height)
-                local_variances = row_variances[search_start:search_end]
-                best_local_y = int(np.argmin(local_variances))
+                local_var = row_variances[search_start:search_end]
+                # Tỉ lệ pixel sáng (>= 240) trên mỗi hàng: hàng trắng = khoảng cách giữa panels
+                white_ratio = (mega_gray[search_start:search_end] >= 240).mean(axis=1)
+                # Điểm tổng hợp: phương sai thấp + tỉ lệ sáng cao = điểm nhỏ = vị trí cắt tốt nhất
+                # Trọng số 200 được điều chỉnh thực nghiệm để ưu tiên hàng trắng hơn hàng phương sai thấp
+                score = local_var - 200.0 * white_ratio
+                best_local_y = int(np.argmin(score))
                 slice_y = search_start + best_local_y
 
             slice_img = mega_img.crop((0, y, w_common, slice_y))
@@ -257,7 +262,7 @@ class MangaPipeline:
         bubble_data = {}  # {idx: (is_bubble, contour)}
         if cv2_img is not None:
             for i in range(n):
-                is_b, contour, _, _ = self.find_bubble_contour_and_rect(cv2_img, ocr_items[i]["bbox"])
+                is_b, contour, _, _, _ = self.find_bubble_contour_and_rect(cv2_img, ocr_items[i]["bbox"])
                 bubble_data[i] = (is_b, contour)
         else:
             for i in range(n):
@@ -533,7 +538,7 @@ Hãy dịch toàn bộ danh sách và trả về kết quả JSON:
         crop_h, crop_w = crop.shape[:2]
 
         if crop_h <= 0 or crop_w <= 0:
-            return False, None, [x0, y0, x2, y2], (255, 255, 255)
+            return False, None, [x0, y0, x2, y2], (255, 255, 255), 0.0
 
         seed_x = max(0, min(crop_w - 1, int((x0 + x2) / 2 - xmin)))
         seed_y = max(0, min(crop_h - 1, int((y0 + y2) / 2 - ymin)))
@@ -563,11 +568,11 @@ Hãy dịch toàn bộ danh sách và trả về kết quả JSON:
         bubble_pixels = int(np.sum(bubble_mask == 255))
 
         if bubble_pixels < box_w * box_h * 0.35:
-            return False, None, [x0, y0, x2, y2], (255, 255, 255)
+            return False, None, [x0, y0, x2, y2], (255, 255, 255), 0.0
 
         contours, _ = cv2.findContours(bubble_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         if not contours:
-            return False, None, [x0, y0, x2, y2], (255, 255, 255)
+            return False, None, [x0, y0, x2, y2], (255, 255, 255), 0.0
 
         bubble_cnt = None
         max_cnt_area = 0
@@ -579,16 +584,18 @@ Hãy dịch toàn bộ danh sách và trả về kết quả JSON:
                     bubble_cnt = cnt
 
         if bubble_cnt is None:
-            return False, None, [x0, y0, x2, y2], (255, 255, 255)
+            return False, None, [x0, y0, x2, y2], (255, 255, 255), 0.0
 
         best_contour_abs = bubble_cnt + np.array([xmin, ymin])
 
-        # Màu nền trung vị của bong bóng
+        # Màu nền trung vị và độ lệch chuẩn của bong bóng
         bg_pixels = crop[bubble_mask == 255]
         bg_color = (255, 255, 255)
+        bg_std = 0.0  # Độ lệch chuẩn màu sắc: nhỏ = nền trơn (Hàn/Nhật), lớn = nền phức tạp (Trung)
         if bg_pixels.size > 0:
             m = np.median(bg_pixels, axis=0)
             bg_color = (int(m[0]), int(m[1]), int(m[2]))
+            bg_std = float(np.std(bg_pixels))  # Ngưỡng < 12: nền trơn, >= 12: nền gradient/xước
 
         # Xói mòn mask để chữ không dính viền
         k_size = max(3, int(min(box_w, box_h) * 0.08))
@@ -610,7 +617,7 @@ Hãy dịch toàn bộ danh sách và trả về kết quả JSON:
         # Mở rộng OCR box 35% chiều rộng và 20% chiều cao để tạo không gian chứa chữ dịch
         exp_w = int(box_w * 0.35)
         exp_h = int(box_h * 0.20)
-        
+
         x0_exp = x0 - exp_w
         x2_exp = x2 + exp_w
         y0_exp = y0 - exp_h
@@ -628,7 +635,8 @@ Hãy dịch toàn bộ danh sách và trả về kết quả JSON:
         else:
             best_rect = [x0, y0, x2, y2]
 
-        return True, best_contour_abs, best_rect, bg_color
+        # Trả về thêm bg_std để caller tự quyết định dùng flat fill hay LaMa
+        return True, best_contour_abs, best_rect, bg_color, bg_std
 
     # ──────────────────────────────────────────────────────────────────────────
     # Vẽ chữ
@@ -948,31 +956,37 @@ Hãy dịch toàn bộ danh sách và trả về kết quả JSON:
                         if not t_text or t_text == item["original_text"]:
                             continue
 
-                        is_bubble, _, best_rect, bg_color = self.find_bubble_contour_and_rect(cv2_img, item["bbox"])
+                        is_bubble, _, best_rect, bg_color, bg_std = self.find_bubble_contour_and_rect(cv2_img, item["bbox"])
                         padded_rect = self.apply_adaptive_padding(item["bbox"], W_img, H_img)
 
-                        # Kiểm tra xem LaMa có khả dụng không và kích thước box có nhỏ không
                         lama_available = self._get_lama_instance() is not None
                         x0, y0, x2, y2 = item["bbox"]
                         box_w, box_h = x2 - x0, y2 - y0
                         is_small_box = (box_w < 250 or box_h < 120)
+                        # Ngưỡng bg_std < 12: nền trơn đồng nhất (Hàn/Nhật) → flat fill siêu tốc
+                        # Ngưỡng bg_std >= 12: nền gradient/xước/xuyên thấu (Trung) → LaMa xoá thông minh
+                        is_solid_bg = bg_std < 12.0
 
-                        if is_bubble and not (is_small_box and lama_available):
-                            # Tô đè màu nền đơn sắc của bong bóng thoại (cho bong bóng lớn hoặc khi không có LaMa)
-                            sub_mask = np.zeros(cv2_img.shape[:2], dtype=np.uint8)
-                            for poly in item["box_points"]:
-                                pts = np.array(poly, dtype=np.int32)
-                                cv2.fillPoly(sub_mask, [pts], 255)
-                            sub_mask = cv2.dilate(sub_mask, cv2.getStructuringElement(cv2.MORPH_RECT, (4, 4)))
-                            cv2_img[sub_mask == 255] = bg_color
+                        if is_bubble and is_solid_bg and not (is_small_box and lama_available):
+                            # TỐI ƯU TỐC ĐỘ: Nền trơn đồng nhất → tô màu trực tiếp (Hàn/Nhật)
+                            x0_b, y0_b, x2_b, y2_b = map(int, item["bbox"])
+                            pad_rect = 8
+                            x0_m = max(0, x0_b - pad_rect)
+                            y0_m = max(0, y0_b - pad_rect)
+                            x2_m = min(W_img, x2_b + pad_rect)
+                            y2_m = min(H_img, y2_b + pad_rect)
+                            cv2.rectangle(cv2_img, (x0_m, y0_m), (x2_m, y2_m), bg_color, -1)
                             typeset_info[item["id"]] = {"bbox": best_rect, "is_sfx": False}
                         else:
-                            # Chữ SFX lơ lửng, hoặc bong bóng nhỏ khi có LaMa → Dùng LaMa / OpenCV Inpaint nâng cao để xóa chữ
-                            for poly in item["box_points"]:
-                                pts = np.array(poly, dtype=np.int32)
-                                cv2.fillPoly(sfx_mask, [pts], 255)
+                            # CHẤT LƯỢNG CAO: Nền phức tạp (Trung) hoặc chữ SFX → dùng LaMa xoá
+                            x0_b, y0_b, x2_b, y2_b = map(int, item["bbox"])
+                            pad_rect = 8
+                            x0_m = max(0, x0_b - pad_rect)
+                            y0_m = max(0, y0_b - pad_rect)
+                            x2_m = min(W_img, x2_b + pad_rect)
+                            y2_m = min(H_img, y2_b + pad_rect)
+                            cv2.rectangle(sfx_mask, (x0_m, y0_m), (x2_m, y2_m), 255, -1)
                             has_sfx = True
-                            # Giữ nguyên kiểu vẽ chữ (is_sfx=False nếu ban đầu là bubble, dùng best_rect)
                             if is_bubble:
                                 typeset_info[item["id"]] = {"bbox": best_rect, "is_sfx": False}
                             else:
