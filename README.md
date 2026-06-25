@@ -118,6 +118,8 @@ Hệ thống sử dụng thư viện **PaddleOCR** cho tác vụ nhận diện c
   * Hệ thống hoạt động tốt nhất với các **bong bóng thoại nền trắng hoặc đơn sắc** rõ ràng. Thuật toán phát hiện biên nhạy bén, inpaint xóa chữ cũ phẳng lì và typesetting tự động căn lề giữa rất cân đối, đẹp mắt.
 * 🔴 **Nền màu mè, SFX phức tạp hoặc đè nét vẽ (Hạn chế):**
   * Với các dòng chữ nằm trực tiếp trên nền tranh nhiều màu sắc, chi tiết phức tạp, hoặc chữ SFX chồng lên nét vẽ của nhân vật, kết quả inpaint (xóa chữ) bằng OpenCV hoặc LaMa-CPU có thể bị mờ nhẹ hoặc chưa sạch triệt để do độ phức tạp cao của nền vẽ tay.
+* 🔴 **Bong bóng thoại nền màu, nền chuyển sắc hoặc khung thoại phức tạp (Hạn chế)**:
+  *Với các bong bóng thoại có nền màu, hiệu ứng chuyển màu (gradient), hoa văn hoặc khung trang trí phức tạp, thuật toán xóa chữ hiện tại khó tái tạo chính xác nền gốc sau khi loại bỏ văn bản. Kết quả có thể xuất hiện vùng màu không đồng nhất, viền khung bị méo nhẹ hoặc dấu vết còn sót lại của chữ cũ, làm giảm tính tự nhiên của ảnh sau khi dịch
 
 ### 📸 Hình ảnh thực tế từ hệ thống:
 
