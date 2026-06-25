@@ -104,6 +104,29 @@ print("🌐 Truy cập tại:", public_url.public_url)
 
 ---
 
+## 📊 Đánh Giá Hiệu Năng & Demo Thực Tế
+
+Hệ thống sử dụng thư viện **PaddleOCR** cho tác vụ nhận diện chữ. Dưới đây là đánh giá hiệu năng thực tế theo ngôn ngữ và bố cục truyện:
+
+* 🟢 **Tiếng Trung & Tiếng Anh (Hoạt động Xuất Sắc):**
+  * Mô hình PaddleOCR được huấn luyện chuyên biệt và tối ưu hóa rất tốt cho hai ngôn ngữ này.
+  * Nhận diện ký tự chữ ngang chuẩn xác gần như 100%.
+  * **Khuyên dùng:** Nếu dịch truyện Nhật (Manga), nên sử dụng bản dịch tiếng Anh của truyện để dịch qua tiếng Việt để có chất lượng tốt nhất.
+* 🟡 **Tiếng Nhật & Tiếng Hàn (Khá/Trung Bình):**
+  * Thư viện mặc định của PaddleOCR gặp khó khăn với định dạng chữ dọc truyền thống của Manga (đọc từ phải qua trái) hoặc các font chữ viết tay cách điệu, đôi khi dẫn đến hiện tượng quét sót hoặc nhận diện sai ký tự.
+* 🟢 **Bong bóng thoại nền trắng, sạch (Xử lý Hoàn hảo):**
+  * Hệ thống hoạt động tốt nhất với các **bong bóng thoại nền trắng hoặc đơn sắc** rõ ràng. Thuật toán phát hiện biên nhạy bén, inpaint xóa chữ cũ phẳng lì và typesetting tự động căn lề giữa rất cân đối, đẹp mắt.
+* 🔴 **Nền màu mè, SFX phức tạp hoặc đè nét vẽ (Hạn chế):**
+  * Với các dòng chữ nằm trực tiếp trên nền tranh nhiều màu sắc, chi tiết phức tạp, hoặc chữ SFX chồng lên nét vẽ của nhân vật, kết quả inpaint (xóa chữ) bằng OpenCV hoặc LaMa-CPU có thể bị mờ nhẹ hoặc chưa sạch triệt để do độ phức tạp cao của nền vẽ tay.
+
+### 📸 Hình ảnh thực tế từ hệ thống:
+
+| Demo Truyện Trung (Webtoon - Chữ Ngang) | Demo Truyện Nhật (Bản tiếng Anh - Bong bóng thoại trắng) |
+|:---:|:---:|
+| ![Truyện Trung](docs/images/demo_cn.png) | ![Truyện Anh](docs/images/demo_en.png) |
+
+---
+
 ## 🎮 Hướng Dẫn Sử Dụng
 
 ### Chế độ 1: Dịch tự động (Gemini API)
@@ -135,7 +158,7 @@ print("🌐 Truy cập tại:", public_url.public_url)
 MANGA-TRANSLATION-AUTOMATION/
 ├── app/
 │   ├── main.py            # FastAPI routes & job management
-│   ├── pipeline.py        # MangaPipeline (5 bước xử lý)
+│   ├── pipeline/          # MangaPipeline gói mô-đun (core, slicer, ocr, grouper, translator, renderer)
 │   ├── static/
 │   │   ├── css/style.css  # Giao diện Premium Dark Theme
 │   │   └── js/app.js      # Frontend logic & SSE client
