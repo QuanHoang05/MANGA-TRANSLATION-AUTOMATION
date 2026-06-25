@@ -92,6 +92,24 @@
                         <small class="help-text">Gộp trang để AI hiểu ngữ cảnh toàn diện, dịch đúng xưng hô nhân vật.</small>
                     </div>
 
+                    <div class="row-inputs" style="display: flex; gap: 15px; margin-bottom: 1rem; flex-wrap: wrap;">
+                        <div class="input-group" style="flex: 1; min-width: 140px; margin-bottom: 0;">
+                            <div class="slider-header">
+                                <label for="detDbUnclipRatio">Nở rộng hộp chữ (Unclip)</label>
+                                <span id="detDbUnclipRatioValue">1.6</span>
+                            </div>
+                            <input type="range" id="detDbUnclipRatio" min="1.5" max="3.0" step="0.1" value="1.6">
+                        </div>
+
+                        <div class="input-group" style="flex: 1; min-width: 140px; margin-bottom: 0;">
+                            <div class="slider-header">
+                                <label for="detDbBoxThresh">Ngưỡng lọc hộp (Thresh)</label>
+                                <span id="detDbBoxThreshValue">0.60</span>
+                            </div>
+                            <input type="range" id="detDbBoxThresh" min="0.2" max="0.9" step="0.05" value="0.60">
+                        </div>
+                    </div>
+
                     <div class="input-group">
                         <label for="additionalInstructions">Yêu cầu xưng hô & Chỉ dẫn dịch thuật (Prompt phụ)</label>
                         <textarea id="additionalInstructions" rows="3" placeholder="Ví dụ: Dịch xưng hô ngọt ngào (nam chính gọi nữ chính là 'Muội', xưng 'Huynh'). Dịch theo phong cách kiếm hiệp cổ trang..."></textarea>

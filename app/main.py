@@ -60,7 +60,9 @@ def run_job_in_background(
     tone: str,
     batch_size_pages: int,
     additional_instructions: str = "",
-    custom_translation: str = ""
+    custom_translation: str = "",
+    det_db_unclip_ratio: float = 1.6,
+    det_db_box_thresh: float = 0.6
 ):
     """
     Thực thi quy trình dịch truyện tranh trong luồng nền và cập nhật trạng thái phiên làm việc.
@@ -98,7 +100,9 @@ def run_job_in_background(
             batch_size_pages=batch_size_pages,
             additional_instructions=additional_instructions,
             status_callback=status_callback,
-            custom_translation=custom_translation
+            custom_translation=custom_translation,
+            det_db_unclip_ratio=det_db_unclip_ratio,
+            det_db_box_thresh=det_db_box_thresh
         )
 
         pipeline.run_pipeline(zip_path, output_zip_path, temp_dir)
@@ -151,7 +155,9 @@ async def upload_files(
     tone: str = Form("tự nhiên"),
     batch_size_pages: int = Form(10),
     additional_instructions: str = Form(""),
-    custom_translation: Optional[str] = Form("")
+    custom_translation: Optional[str] = Form(""),
+    det_db_unclip_ratio: float = Form(1.6),
+    det_db_box_thresh: float = Form(0.6)
 ):
     """
     Tiếp nhận tệp tin tải lên (1 file ZIP hoặc nhiều file ảnh đơn lẻ),
@@ -225,7 +231,9 @@ async def upload_files(
         tone,
         batch_size_pages,
         additional_instructions,
-        custom_translation
+        custom_translation,
+        det_db_unclip_ratio,
+        det_db_box_thresh
     )
 
     return {"job_id": job_id}

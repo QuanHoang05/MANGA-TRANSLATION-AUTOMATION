@@ -26,7 +26,9 @@ class MangaPipeline:
         batch_size_pages: int = 10,
         additional_instructions: str = "",
         status_callback=None,
-        custom_translation: str = ""
+        custom_translation: str = "",
+        det_db_unclip_ratio: float = 1.6,
+        det_db_box_thresh: float = 0.6
     ):
         self.api_key = api_key
         self.src_lang = src_lang
@@ -35,6 +37,8 @@ class MangaPipeline:
         self.batch_size_pages = batch_size_pages
         self.additional_instructions = additional_instructions
         self.status_callback = status_callback
+        self.det_db_unclip_ratio = det_db_unclip_ratio
+        self.det_db_box_thresh = det_db_box_thresh
 
         # Cấu hình Google Gemini API
         if api_key:
@@ -200,7 +204,9 @@ class MangaPipeline:
                 det_limit_side_len=3000,
                 det_limit_type='max',
                 drop_score=0.3,
-                cpu_threads=2
+                cpu_threads=2,
+                det_db_unclip_ratio=self.det_db_unclip_ratio,
+                det_db_box_thresh=self.det_db_box_thresh
             )
         return self._ocr_cache[lang]
 
@@ -253,45 +259,86 @@ class MangaPipeline:
             if ri != rj:
                 parent[ri] = rj
 
-        # Bước 1: Dò tìm bong bóng thoại cho từng box độc lập
-        bubble_data = {}  # {idx: (is_bubble, contour)}
+        # Bước 1: Dò tìm bong bóng thoại cho từng box trên ảnh toàn cục
+        box_bubble_idx = [None] * n
         if cv2_img is not None:
+            gray = cv2.cvtColor(cv2_img, cv2.COLOR_BGR2GRAY)
+            H_img, W_img = gray.shape[:2]
+            bubble_masks = []  # Danh sách các (mask, bounding_box_of_mask)
+
             for i in range(n):
-                is_b, contour, _, _ = self.find_bubble_contour_and_rect(cv2_img, ocr_items[i]["bbox"])
-                bubble_data[i] = (is_b, contour)
-        else:
-            for i in range(n):
-                bubble_data[i] = (False, None)
+                x0, y0, x2, y2 = map(int, ocr_items[i]["bbox"])
+                cx, cy = int((x0 + x2) / 2), int((y0 + y2) / 2)
+                cx = max(0, min(W_img - 1, cx))
+                cy = max(0, min(H_img - 1, cy))
+
+                # Kiểm tra nhanh xem tâm của box i có nằm trong bất kỳ bubble mask nào đã tìm thấy không
+                found_idx = None
+                for idx, (mask, (bx0, by0, bx2, by2)) in enumerate(bubble_masks):
+                    if bx0 <= cx <= bx2 and by0 <= cy <= by2:
+                        if mask[cy, cx] == 255:
+                            found_idx = idx
+                            break
+
+                if found_idx is not None:
+                    box_bubble_idx[i] = found_idx
+                else:
+                    # Nếu chưa nằm trong mask nào, chạy floodFill tìm bubble từ box i
+                    seed_x, seed_y = cx, cy
+                    if gray[seed_y, seed_x] < 80:
+                        # Chọn điểm sáng nhất lân cận nếu điểm trung tâm trúng nét chữ đen
+                        ny0, ny1 = max(0, seed_y - 15), min(H_img, seed_y + 15)
+                        nx0, nx1 = max(0, seed_x - 15), min(W_img, seed_x + 15)
+                        sub = gray[ny0:ny1, nx0:nx1]
+                        if sub.size > 0:
+                            _, _, _, max_loc = cv2.minMaxLoc(sub)
+                            seed_x = nx0 + max_loc[0]
+                            seed_y = ny0 + max_loc[1]
+
+                    ff_mask = np.zeros((H_img + 2, W_img + 2), dtype=np.uint8)
+                    cv2.floodFill(
+                        image=gray,
+                        mask=ff_mask,
+                        seedPoint=(seed_x, seed_y),
+                        newVal=255,
+                        loDiff=10,
+                        upDiff=10,
+                        flags=4 | cv2.FLOODFILL_MASK_ONLY | (255 << 8)
+                    )
+                    bubble_mask = ff_mask[1:-1, 1:-1]
+                    bubble_pixels = int(np.sum(bubble_mask == 255))
+                    box_w, box_h = x2 - x0, y2 - y0
+
+                    if bubble_pixels >= box_w * box_h * 0.35:
+                        ys, xs = np.where(bubble_mask == 255)
+                        if xs.size > 0 and ys.size > 0:
+                            bbox_mask = (xs.min(), ys.min(), xs.max(), ys.max())
+                            bubble_masks.append((bubble_mask, bbox_mask))
+                            box_bubble_idx[i] = len(bubble_masks) - 1
 
         # Bước 2: Duyệt qua các cặp để quyết định merge
         for i in range(n):
             for j in range(i + 1, n):
+                idx_A = box_bubble_idx[i]
+                idx_B = box_bubble_idx[j]
+
                 x0A, y0A, x2A, y2A = ocr_items[i]["bbox"]
                 x0B, y0B, x2B, y2B = ocr_items[j]["bbox"]
 
                 cxA, cyA = (x0A + x2A) / 2.0, (y0A + y2A) / 2.0
                 cxB, cyB = (x0B + x2B) / 2.0, (y0B + y2B) / 2.0
 
-                is_bubble_A, contour_A = bubble_data[i]
-                is_bubble_B, contour_B = bubble_data[j]
+                dist = math.sqrt((cxA - cxB)**2 + (cyA - cyB)**2)
+                h_avg = ((y2A - y0A) + (y2B - y0B)) / 2.0
 
-                # TH1: Cả hai đều được xác định thuộc bong bóng thoại
-                if is_bubble_A and is_bubble_B and contour_A is not None and contour_B is not None:
-                    # Kiểm tra xem tâm của box B có nằm trong contour của A và ngược lại hay không
-                    ptA = (float(cxA), float(cyA))
-                    ptB = (float(cxB), float(cyB))
-                    
-                    in_A = cv2.pointPolygonTest(contour_A, ptB, False) >= 0
-                    in_B = cv2.pointPolygonTest(contour_B, ptA, False) >= 0
-                    
-                    if in_A or in_B:
+                # TH1: Cả hai đều thuộc cùng một bong bóng thoại đã quét
+                if idx_A is not None and idx_B is not None and idx_A == idx_B:
+                    # Giới hạn khoảng cách tối đa để tránh gộp các bubble đôi/sát nhau có đường/kênh nối
+                    if dist < max(h_avg * 2.0, 60):
                         union(i, j)
                 else:
                     # TH2: Là chữ SFX ngoài bong bóng hoặc không có cv2_img -> Merge bằng khoảng cách tâm và độ phủ ngang
-                    h_avg = ((y2A - y0A) + (y2B - y0B)) / 2.0
                     w_avg = ((x2A - x0A) + (x2B - x0B)) / 2.0
-                    
-                    dist = math.sqrt((cxA - cxB)**2 + (cyA - cyB)**2)
                     overlap_x = min(x2A, x2B) - max(x0A, x0B)
 
                     # Chỉ merge các dòng chữ rời rạc ngoài bong bóng (như SFX dọc) khi ở rất gần nhau
@@ -944,8 +991,8 @@ Hãy dịch toàn bộ danh sách và trả về kết quả JSON:
 
                     for item in items:
                         t_text = translated_texts.get(item["id"])
-                        # Chỉ xử lý những ô thoại có bản dịch khác với văn bản gốc
-                        if not t_text or t_text == item["original_text"]:
+                        # Nếu bản dịch giống hệt bản gốc (ví dụ số hiệu, ký hiệu cần giữ nguyên), ta bỏ qua không xóa
+                        if t_text == item["original_text"]:
                             continue
 
                         is_bubble, _, best_rect, bg_color = self.find_bubble_contour_and_rect(cv2_img, item["bbox"])
@@ -968,10 +1015,22 @@ Hãy dịch toàn bộ danh sách và trả về kết quả JSON:
                             typeset_info[item["id"]] = {"bbox": best_rect, "is_sfx": False}
                         else:
                             # Chữ SFX lơ lửng, hoặc bong bóng nhỏ khi có LaMa → Dùng LaMa / OpenCV Inpaint nâng cao để xóa chữ
+                            item_mask = np.zeros(cv2_img.shape[:2], dtype=np.uint8)
                             for poly in item["box_points"]:
                                 pts = np.array(poly, dtype=np.int32)
-                                cv2.fillPoly(sfx_mask, [pts], 255)
+                                cv2.fillPoly(item_mask, [pts], 255)
+                            
+                            # Tối ưu hóa độ giãn nở (dilation) động cho từng chữ SFX để che phủ hết viền/bóng chữ mà không lem nét vẽ tranh
+                            box_h = y2 - y0
+                            dilate_size = max(4, min(16, int(box_h * 0.10)))
+                            if dilate_size % 2 == 0:
+                                dilate_size += 1
+                            kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (dilate_size, dilate_size))
+                            item_mask = cv2.dilate(item_mask, kernel)
+                            
+                            sfx_mask = cv2.bitwise_or(sfx_mask, item_mask)
                             has_sfx = True
+                            
                             # Giữ nguyên kiểu vẽ chữ (is_sfx=False nếu ban đầu là bubble, dùng best_rect)
                             if is_bubble:
                                 typeset_info[item["id"]] = {"bbox": best_rect, "is_sfx": False}
@@ -979,7 +1038,6 @@ Hãy dịch toàn bộ danh sách và trả về kết quả JSON:
                                 typeset_info[item["id"]] = {"bbox": padded_rect, "is_sfx": True}
 
                     if has_sfx:
-                        sfx_mask = cv2.dilate(sfx_mask, cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5)))
                         lama = self._get_lama_instance()
 
                         if lama is not None:

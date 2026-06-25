@@ -8,6 +8,10 @@ document.addEventListener("DOMContentLoaded", () => {
     const batchSizeInput = document.getElementById("batchSize");
     const batchSizeValue = document.getElementById("batchSizeValue");
     const additionalInstructionsInput = document.getElementById("additionalInstructions");
+    const detDbUnclipRatioInput = document.getElementById("detDbUnclipRatio");
+    const detDbUnclipRatioValue = document.getElementById("detDbUnclipRatioValue");
+    const detDbBoxThreshInput = document.getElementById("detDbBoxThresh");
+    const detDbBoxThreshValue = document.getElementById("detDbBoxThreshValue");
     
     const dropzone = document.getElementById("dropzone");
     const fileInput = document.getElementById("fileInput");
@@ -83,6 +87,14 @@ document.addEventListener("DOMContentLoaded", () => {
     // 2. Cập nhật nhãn hiển thị số lượng trang gộp khi kéo thanh trượt (Batch Size)
     batchSizeInput.addEventListener("input", (e) => {
         batchSizeValue.textContent = `${e.target.value} trang`;
+    });
+
+    detDbUnclipRatioInput.addEventListener("input", (e) => {
+        detDbUnclipRatioValue.textContent = Number(e.target.value).toFixed(1);
+    });
+
+    detDbBoxThreshInput.addEventListener("input", (e) => {
+        detDbBoxThreshValue.textContent = Number(e.target.value).toFixed(2);
     });
 
     // 3. Quản lý kéo thả và tương tác vùng chọn tệp tin ZIP
@@ -211,6 +223,8 @@ document.addEventListener("DOMContentLoaded", () => {
         translationToneSelect.disabled = true;
         batchSizeInput.disabled = true;
         additionalInstructionsInput.disabled = true;
+        detDbUnclipRatioInput.disabled = true;
+        detDbBoxThreshInput.disabled = true;
         customTranslationBox.disabled = true;
         btnLoader.style.display = "inline-block";
         btnDownload.classList.add("disabled");
@@ -243,6 +257,8 @@ document.addEventListener("DOMContentLoaded", () => {
         formData.append("batch_size_pages", batchSizeInput.value);
         formData.append("additional_instructions", additionalInstructionsInput.value.trim());
         formData.append("custom_translation", customTranslation);
+        formData.append("det_db_unclip_ratio", detDbUnclipRatioInput.value);
+        formData.append("det_db_box_thresh", detDbBoxThreshInput.value);
 
         try {
             const response = await fetch("/api/upload", {
@@ -456,6 +472,8 @@ document.addEventListener("DOMContentLoaded", () => {
         translationToneSelect.disabled = false;
         batchSizeInput.disabled = false;
         additionalInstructionsInput.disabled = false;
+        detDbUnclipRatioInput.disabled = false;
+        detDbBoxThreshInput.disabled = false;
         customTranslationBox.disabled = false;
         btnLoader.style.display = "none";
         btnContinuePipeline.style.display = "none";
