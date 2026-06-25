@@ -991,8 +991,8 @@ Hãy dịch toàn bộ danh sách và trả về kết quả JSON:
 
                     for item in items:
                         t_text = translated_texts.get(item["id"])
-                        # Nếu bản dịch giống hệt bản gốc (ví dụ số hiệu, ký hiệu cần giữ nguyên), ta bỏ qua không xóa
-                        if t_text == item["original_text"]:
+                        # Nếu không có bản dịch hoặc bản dịch giống hệt bản gốc, ta giữ nguyên và không xóa
+                        if not t_text or t_text.strip() == "" or t_text == item["original_text"]:
                             continue
 
                         is_bubble, _, best_rect, bg_color = self.find_bubble_contour_and_rect(cv2_img, item["bbox"])
